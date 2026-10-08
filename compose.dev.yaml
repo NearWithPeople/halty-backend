@@ -1,0 +1,28 @@
+services:
+  strapi:
+    container_name: strapi
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: halty-backend:dev
+    restart: unless-stopped
+    init: true
+    env_file: .env.example  # All variables from .env are injected into the container
+    volumes:
+      - ./config:/opt/app/config
+      - ./src:/opt/app/src
+      - ./types:/opt/app/types  # generated types stay visible on the host
+      - ./package.json:/opt/package.json
+      - ./package-lock.json:/opt/package-lock.json
+      - ./.env:/opt/app/.env  # Needed because Strapi uses dotenv to read .env in development
+      - ./.tmp:/opt/app/.tmp  # SQLite data.db — same path as a bare-metal run
+      - ./public/uploads:/opt/app/public/uploads
+    ports:
+      - "1337:1337"
+    networks:
+      - strapi
+
+networks:
+  strapi:
+    name: strapi
+    driver: bridge

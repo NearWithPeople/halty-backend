@@ -1,0 +1,24 @@
+# dependencies & build output (installed inside the image via `npm ci`)
+node_modules
+dist
+.strapi
+.strapi-updater.json
+
+# runtime data & secrets (bind-mounted at run time instead)
+.tmp
+.env
+public/uploads
+
+# vcs / docs / tooling (not needed in the image)
+.git
+.gitignore
+*.md
+docs
+compose*.yaml
+Dockerfile*
+Makefile
+.dockerignore
+
+# local artifacts
+*.log
+dev crediatls.png
