@@ -1,0 +1,107 @@
+{
+  "kind": "collectionType",
+  "collectionName": "vacancies",
+  "info": {
+    "singularName": "vacancy",
+    "pluralName": "vacancies",
+    "displayName": "Vacancy",
+    "description": "Job vacancies on the map (analog of UpLift exercise)"
+  },
+  "options": {
+    "draftAndPublish": true
+  },
+  "attributes": {
+    "title": {
+      "type": "string",
+      "required": true
+    },
+    "company": {
+      "type": "string",
+      "required": true
+    },
+    "employerName": {
+      "type": "string",
+      "default": "АДМИН"
+    },
+    "salary": {
+      "type": "string",
+      "required": true
+    },
+    "category": {
+      "type": "enumeration",
+      "enum": ["horeca", "parks_green", "retail", "delivery", "it_creative", "service"],
+      "required": true
+    },
+    "categoryLabel": {
+      "type": "string",
+      "required": true
+    },
+    "attachmentType": {
+      "type": "enumeration",
+      "enum": ["building", "ground_zone"],
+      "default": "building",
+      "required": true
+    },
+    "lat": {
+      "type": "decimal",
+      "required": true
+    },
+    "lng": {
+      "type": "decimal",
+      "required": true
+    },
+    "address": {
+      "type": "string"
+    },
+    "locationName": {
+      "type": "string",
+      "required": true
+    },
+    "description": {
+      "type": "text",
+      "required": true
+    },
+    "requirements": {
+      "type": "json",
+      "default": []
+    },
+    "schedule": {
+      "type": "string",
+      "required": true
+    },
+    "payoutType": {
+      "type": "string",
+      "required": true
+    },
+    "color": {
+      "type": "string",
+      "default": "#3b82f6"
+    },
+    "accentColor": {
+      "type": "string",
+      "default": "#1e3a8a"
+    },
+    "iconType": {
+      "type": "enumeration",
+      "enum": ["tree", "coffee", "shopping", "delivery", "laptop", "wrench"],
+      "default": "coffee"
+    },
+    "buildingHeight": {
+      "type": "decimal"
+    },
+    "zoneRadius": {
+      "type": "decimal"
+    },
+    "createdByRole": {
+      "type": "enumeration",
+      "enum": ["admin"],
+      "default": "admin"
+    },
+    "applications": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::application.application",
+      "mappedBy": "vacancy"
+    }
+  }
+}

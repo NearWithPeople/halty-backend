@@ -1,0 +1,136 @@
+# Halty Backend — первые API-запросы
+# Архитектура по образцу uplift-backend (Strapi 4 → адаптировано под Strapi 5)
+#
+# UpLift mapping:
+#   exercise   → vacancy
+#   favorite   → application (owner-scoped)
+#   /exercises/search → /vacancies/search
+#   spatial    → /vacancies/nearby
+#
+# Base URL (local):
+@baseUrl = http://localhost:1337
+@api = {{baseUrl}}/api
+
+### ─── Health check (как strapiClient.checkHealth) ─────────────────
+GET {{api}}/vacancies?pagination[pageSize]=1
+
+### ─── 1. Публичный контент: список вакансий ───────────────────────
+# Аналог: GET /api/exercises?locale=en&populate=*
+GET {{api}}/vacancies?populate=*&pagination[pageSize]=100
+
+### ─── 2. Фильтр по категории ───────────────────────────────────────
+# Аналог: GET /api/categories?filters[filterType][$eq]=fitness
+GET {{api}}/vacancies?filters[category][$eq]=parks_green&populate=*
+
+### ─── 3. Поиск по тексту (custom route) ───────────────────────────
+# Аналог: GET /api/exercises/search?search=full+body
+GET {{api}}/vacancies/search?search=парк&pagination[page]=1&pagination[pageSize]=20
+
+### ─── 4. Вакансии рядом (spatial, custom route) ───────────────────
+GET {{api}}/vacancies/nearby?lat=53.9045&lng=27.5615&radius=3000
+
+### ─── 5. Одна вакансия ────────────────────────────────────────────
+# Замените :documentId на реальный id из ответа выше
+GET {{api}}/vacancies/:documentId?populate=*
+
+### ─── 6. Регистрация пользователя ─────────────────────────────────
+# Аналог UpLift: POST /api/auth/local/register
+POST {{api}}/auth/local/register
+Content-Type: application/json
+
+{
+  "username": "testuser",
+  "email": "test@halty.by",
+  "password": "Test1234!"
+}
+
+### ─── 7. Логин ────────────────────────────────────────────────────
+# Аналог UpLift: POST /api/auth/local
+# @name login
+POST {{api}}/auth/local
+Content-Type: application/json
+
+{
+  "identifier": "test@halty.by",
+  "password": "Test1234!"
+}
+
+### Сохраните JWT из ответа:
+@jwt = {{login.response.body.jwt}}
+
+### ─── 8. Текущий пользователь ─────────────────────────────────────
+# Аналог UpLift: GET /api/users/me?populate[plan]=*
+GET {{api}}/users/me
+Authorization: Bearer {{jwt}}
+
+### ─── 9. Создать вакансию (admin/authenticated) ─────────────────────
+POST {{api}}/vacancies
+Authorization: Bearer {{jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "title": "Курьер на велосипеде",
+    "company": "FastDelivery",
+    "salary": "90 BYN / смена",
+    "category": "delivery",
+    "categoryLabel": "Доставка",
+    "attachmentType": "ground_zone",
+    "lat": 53.9102,
+    "lng": 27.5678,
+    "locationName": "ул. Немига",
+    "description": "Доставка заказов по центру города.",
+    "requirements": ["Велосипед", "Смартфон"],
+    "schedule": "Гибкий",
+    "payoutType": "Ежедневно",
+    "color": "#3b82f6",
+    "accentColor": "#1e3a8a",
+    "iconType": "delivery"
+  }
+}
+
+### ─── 10. Откликнуться на вакансию (owner-scoped) ───────────────────
+# Аналог UpLift: POST /api/favorites { data: { exercise: 123 } }
+POST {{api}}/applications
+Authorization: Bearer {{jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "vacancy": "VACANCY_DOCUMENT_ID",
+    "role": "Смена",
+    "company": "Минскзеленстрой",
+    "location": "Сквер Адама Міцкевіча",
+    "lat": 53.8988,
+    "lng": 27.5492,
+    "salary": "1 650 – 2 100 BYN",
+    "scheduleDate": "Сегодня с 10:00",
+    "duration": "8 часов",
+    "walkTime": "~10 минут пешком",
+    "description": "Уход за зелеными насаждениями.",
+    "color": "#4ade80",
+    "progressStep": 1,
+    "status": "pending",
+    "statusLabel": "Ожидает",
+    "requirementsNotes": ["Паспорт гражданина / ВНЖ"]
+  }
+}
+
+### ─── 11. Мои отклики (только свои, owner filter) ───────────────────
+# Аналог UpLift: GET /api/favorites?populate[exercise]=*
+GET {{api}}/applications?populate=*
+Authorization: Bearer {{jwt}}
+
+### ─── 12. Обновить статус отклика ────────────────────────────────────
+# Аналог UpLift: PUT /api/statistics/:id
+PUT {{api}}/applications/APPLICATION_DOCUMENT_ID
+Authorization: Bearer {{jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "status": "reviewing",
+    "statusLabel": "На рассмотрении",
+    "progressStep": 2
+  }
+}

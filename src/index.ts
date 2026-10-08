@@ -1,20 +1,19 @@
-// import type { Core } from '@strapi/strapi';
+import type { Core } from '@strapi/strapi';
+import { setupDefaultPermissions } from './helpers/permissions';
+import { seedSampleVacancies } from './helpers/seed';
 
 export default {
-  /**
-   * An asynchronous register function that runs before
-   * your application is initialized.
-   *
-   * This gives you an opportunity to extend code.
-   */
   register(/* { strapi }: { strapi: Core.Strapi } */) {},
 
-  /**
-   * An asynchronous bootstrap function that runs before
-   * your application gets started.
-   *
-   * This gives you an opportunity to set up your data model,
-   * run jobs, or perform some special logic.
-   */
-  bootstrap(/* { strapi }: { strapi: Core.Strapi } */) {},
+  async bootstrap({ strapi }: { strapi: Core.Strapi }) {
+    const store = strapi.store({ type: 'plugin', name: 'halty', key: 'bootstrap' });
+    const hasRun = (await store.get({ key: 'permissions' })) as { done?: boolean } | null;
+
+    if (!hasRun?.done) {
+      await setupDefaultPermissions(strapi);
+      await seedSampleVacancies(strapi);
+      await store.set({ key: 'permissions', value: { done: true } });
+      strapi.log.info('[bootstrap] Default permissions and seed data applied');
+    }
+  },
 };

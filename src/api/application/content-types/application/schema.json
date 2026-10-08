@@ -1,0 +1,88 @@
+{
+  "kind": "collectionType",
+  "collectionName": "applications",
+  "info": {
+    "singularName": "application",
+    "pluralName": "applications",
+    "displayName": "Application",
+    "description": "User job applications (analog of UpLift favorite/statistic)"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "attributes": {
+    "owner": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "vacancy": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::vacancy.vacancy",
+      "inversedBy": "applications"
+    },
+    "role": {
+      "type": "string",
+      "default": "Смена"
+    },
+    "company": {
+      "type": "string"
+    },
+    "location": {
+      "type": "string"
+    },
+    "lat": {
+      "type": "decimal"
+    },
+    "lng": {
+      "type": "decimal"
+    },
+    "salary": {
+      "type": "string"
+    },
+    "scheduleDate": {
+      "type": "string"
+    },
+    "duration": {
+      "type": "string"
+    },
+    "walkTime": {
+      "type": "string"
+    },
+    "description": {
+      "type": "text"
+    },
+    "appliedDate": {
+      "type": "string"
+    },
+    "color": {
+      "type": "string",
+      "default": "#3b82f6"
+    },
+    "progressStep": {
+      "type": "integer",
+      "default": 1
+    },
+    "status": {
+      "type": "enumeration",
+      "enum": ["pending", "reviewing", "active", "rejected", "completed", "cancelled"],
+      "default": "pending"
+    },
+    "statusLabel": {
+      "type": "string",
+      "default": "Ожидает"
+    },
+    "rejectionReason": {
+      "type": "string"
+    },
+    "requirementsNotes": {
+      "type": "json",
+      "default": []
+    },
+    "messages": {
+      "type": "json",
+      "default": []
+    }
+  }
+}
