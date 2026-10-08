@@ -14,8 +14,6 @@ Headless CMS / API для приложения **Halty** — карта подр
 
 ```bash
 make docker-up      # собрать образ и запустить Strapi на :1337
-make docker-logs    # логи (Ctrl+C — отцепиться)
-make help           # все цели Makefile
 ```
 
 - `make env` — создаёт `.env` из `.env.example` (вызывается автоматически из `docker-up`/`docker-build`). 
