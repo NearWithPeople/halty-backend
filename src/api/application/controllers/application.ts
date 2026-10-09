@@ -40,6 +40,26 @@ function statusLabelFor(status: string): string {
   return 'Ожидает';
 }
 
+type ApplicationDoc = Record<string, unknown>;
+
+function toApiApplication(doc: ApplicationDoc | null): ApplicationDoc | null {
+  if (!doc) return doc;
+  const { applicationStatus, ...rest } = doc;
+  return { ...rest, status: applicationStatus ?? 'pending' };
+}
+
+function toApiApplications(docs: ApplicationDoc[]): ApplicationDoc[] {
+  return docs.map((doc) => toApiApplication(doc) as ApplicationDoc);
+}
+
+function toInternalData(data: ApplicationDoc): ApplicationDoc {
+  const { status, step, ...rest } = data;
+  const internal = { ...rest };
+  if (status !== undefined) internal.applicationStatus = status;
+  if (step !== undefined) internal.progressStep = step;
+  return internal;
+}
+
 export default factories.createCoreController('api::application.application', ({ strapi }) => ({
   async find(ctx) {
     requireAuthenticatedUser(ctx);
@@ -53,7 +73,9 @@ export default factories.createCoreController('api::application.application', ({
       populate: ctx.query.populate ?? '*',
     });
 
-    return { data, meta: { pagination: { total: data.length } } };
+    const applications = toApiApplications(data as unknown as ApplicationDoc[]);
+
+    return { data: applications, meta: { pagination: { total: applications.length } } };
   },
 
   async findOne(ctx) {
@@ -72,7 +94,7 @@ export default factories.createCoreController('api::application.application', ({
       return ctx.notFound('Application not found');
     }
 
-    return { data };
+    return { data: toApiApplication(data as unknown as ApplicationDoc) };
   },
 
   async create(ctx) {
@@ -130,7 +152,7 @@ export default factories.createCoreController('api::application.application', ({
       color: body.color ?? v.color,
       appliedDate: body.appliedDate ?? 'Сегодня',
       progressStep: 1,
-      status: 'pending' as const,
+      applicationStatus: 'pending' as const,
       statusLabel: 'Ожидает',
       requirementsNotes: Array.isArray(body.requirementsNotes)
         ? body.requirementsNotes
@@ -144,7 +166,7 @@ export default factories.createCoreController('api::application.application', ({
       data: payload,
     });
 
-    return { data };
+    return { data: toApiApplication(data as unknown as ApplicationDoc) };
   },
 
   async update(ctx) {
@@ -165,10 +187,10 @@ export default factories.createCoreController('api::application.application', ({
 
     const data = await strapi.documents('api::application.application').update({
       documentId,
-      data: ctx.request.body?.data ?? {},
+      data: toInternalData(ctx.request.body?.data ?? {}),
     });
 
-    return { data };
+    return { data: toApiApplication(data as unknown as ApplicationDoc) };
   },
 
   async updateStatus(ctx) {
@@ -190,7 +212,7 @@ export default factories.createCoreController('api::application.application', ({
 
     const patch: Record<string, unknown> = {};
     if (status !== undefined) {
-      patch.status = status;
+      patch.applicationStatus = status;
       patch.statusLabel = statusLabelFor(String(status));
     }
     if (step !== undefined) {
@@ -205,7 +227,7 @@ export default factories.createCoreController('api::application.application', ({
       data: patch,
     });
 
-    return { data };
+    return { data: toApiApplication(data as unknown as ApplicationDoc) };
   },
 
   async addMessage(ctx) {
@@ -247,6 +269,6 @@ export default factories.createCoreController('api::application.application', ({
       },
     });
 
-    return { data: message, application: data };
+    return { data: message, application: toApiApplication(data as unknown as ApplicationDoc) };
   },
 }));

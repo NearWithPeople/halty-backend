@@ -64,7 +64,7 @@
       "type": "integer",
       "default": 1
     },
-    "status": {
+    "applicationStatus": {
       "type": "enumeration",
       "enum": ["pending", "reviewing", "active", "rejected", "completed", "cancelled"],
       "default": "pending"
