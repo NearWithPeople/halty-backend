@@ -123,7 +123,7 @@ Authorization: Bearer {{jwt}}
 
 ### ─── 12. Обновить отклик ────────────────────────────────────
 # Аналог UpLift: PUT /api/statistics/:id
-PUT {{api}}/applications/APPLICATION_DOCUMENT_ID
+PUT {{api}}/applications/{{APPLICATION_DOCUMENT_ID}}
 Authorization: Bearer {{jwt}}
 Content-Type: application/json
 
@@ -136,14 +136,28 @@ Content-Type: application/json
 }
 
 ### ─── 13. Обновить статус отклика ────────────────────────────────────
-PATCH {{api}}/applications/APPLICATION_DOCUMENT_ID/status
+PATCH {{api}}/applications/{{APPLICATION_DOCUMENT_ID}}/status
 Authorization: Bearer {{jwt}}
 Content-Type: application/json
 
 {
-  "data": {
     "status": "rejected",
     "rejectionReason": "Не по вайбу",
     "step": 2
-  }
+}
+
+### ─── 14. Получить отклики ────────────────────────────────────
+GET {{api}}/applications
+Authorization: Bearer {{jwt}}
+Content-Type: application/json
+
+### ─── 15. Отправить сообщение на отклик ────────────────────────────────────
+POST {{api}}/applications/{{APPLICATION_DOCUMENT_ID}}/messages
+Authorization: Bearer {{jwt}}
+Content-Type: application/json
+
+{
+    "text": "Пашол нахуй",
+    "senderRole": "employer",
+    "senderName": "Илья"
 }

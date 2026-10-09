@@ -35,8 +35,12 @@ npm run develop
 - Админка: http://localhost:1337/admin
 - API: http://localhost:1337/api
 - Примеры запросов: [docs/REQUESTS.http](./docs/REQUESTS.http)
-
 ---
+
+### Заметки по тестированию
+
+1. Можно использовать [httpyac](https://httpyac.github.io/) для посылки запросов
+2. httpyac может брать переменные из .env файла
 
 ## Маппинг UpLift → Halty
 
