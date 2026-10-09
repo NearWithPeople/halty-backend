@@ -24,15 +24,14 @@ export async function setupDefaultPermissions(strapi: Core.Strapi) {
 
     const fullRole = await strapi.service('plugin::users-permissions.role').findOne(role.id);
 
-    for (const [apiKey, actions] of Object.entries(apiRules)) {
-      const controllers = fullRole.permissions?.[apiKey]?.controllers;
+    for (const [uid, actions] of Object.entries(apiRules)) {
+      const [namespace, controllerName] = uid.split('.');
+      const controllers = fullRole.permissions?.[namespace]?.controllers;
       if (!controllers) continue;
 
-      for (const controllerName of Object.keys(controllers)) {
-        for (const action of actions) {
-          if (controllers[controllerName]?.[action]) {
-            controllers[controllerName][action].enabled = true;
-          }
+      for (const action of actions) {
+        if (controllers[controllerName]?.[action]) {
+          controllers[controllerName][action].enabled = true;
         }
       }
     }
