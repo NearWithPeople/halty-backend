@@ -121,7 +121,7 @@ Content-Type: application/json
 GET {{api}}/applications?populate=*
 Authorization: Bearer {{jwt}}
 
-### ─── 12. Обновить статус отклика ────────────────────────────────────
+### ─── 12. Обновить отклик ────────────────────────────────────
 # Аналог UpLift: PUT /api/statistics/:id
 PUT {{api}}/applications/APPLICATION_DOCUMENT_ID
 Authorization: Bearer {{jwt}}
@@ -132,5 +132,18 @@ Content-Type: application/json
     "status": "reviewing",
     "statusLabel": "На рассмотрении",
     "progressStep": 2
+  }
+}
+
+### ─── 13. Обновить статус отклика ────────────────────────────────────
+PATCH {{api}}/applications/APPLICATION_DOCUMENT_ID/status
+Authorization: Bearer {{jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "status": "rejected",
+    "rejectionReason": "Не по вайбу",
+    "step": 2
   }
 }
