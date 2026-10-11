@@ -8,16 +8,39 @@ Headless CMS / API для приложения **Halty** — карта подр
 
 ## Быстрый старт
 
+### Docker (dev, recomended) 
+
+Тот же dev-сервер, но в контейнере (`compose.dev.yaml` + `Dockerfile.dev`):
+
+```bash
+make docker-up      # собрать образ и запустить Strapi на :1337
+```
+
+- Hot reload работает через bind-mounts `./src`, `./config`, `./types`. Зависимости стоят в образе (`/opt/node_modules`) — после правок в `package.json` нужно `make docker-build`.
+- SQLite лежит на хосте в `./.tmp/data.db` (смонтирован в контейнер), поэтому пересид такой же, как в bare-metal: `make docker-reset-db`.
+
+Makefile служит набором комманд Docker
+
+### Local
+
 ```bash
 npm install
 npm run develop
 ```
 
+**Работает на версиях Node с 20 по 25!!**
+
+---
+
 - Админка: http://localhost:1337/admin
 - API: http://localhost:1337/api
 - Примеры запросов: [docs/REQUESTS.http](./docs/REQUESTS.http)
-
 ---
+
+### Заметки по тестированию
+
+1. Можно использовать [httpyac](https://httpyac.github.io/) для посылки запросов
+2. httpyac может брать переменные из .env файла
 
 ## Маппинг UpLift → Halty
 
@@ -308,6 +331,8 @@ docs/
 | `npm run develop` | Dev-сервер + hot reload |
 | `npm run start` | Production |
 | `npm run build` | Сборка admin panel |
+| `make docker-up` | Dev-сервер в Docker на :1337 |
+| `make help` | Список всех Docker-целей Makefile |
 
 ---
 

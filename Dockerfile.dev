@@ -1,0 +1,27 @@
+FROM node:24
+
+ARG NODE_ENV=development
+ENV NODE_ENV=${NODE_ENV}
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Debian package names (node:24 is Debian-based, not Alpine):
+# build toolchain for node-gyp fallbacks, libvips for sharp, git for npm deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential python3 autoconf automake \
+      zlib1g-dev libpng-dev libvips-dev \
+      bash git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/
+COPY package.json package-lock.json ./
+RUN npm config set fetch-retry-maxtimeout 600000 -g \
+    && npm install -g node-gyp \
+    && npm ci
+ENV PATH=/opt/node_modules/.bin:$PATH
+
+WORKDIR /opt/app
+COPY . .
+RUN chown -R node:node /opt/app
+USER node
+EXPOSE 1337
+CMD ["npm", "run", "develop"]

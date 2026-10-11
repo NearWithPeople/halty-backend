@@ -455,6 +455,10 @@ export interface ApiApplicationApplication extends Struct.CollectionTypeSchema {
     draftAndPublish: false;
   };
   attributes: {
+    applicationStatus: Schema.Attribute.Enumeration<
+      ['pending', 'reviewing', 'active', 'rejected', 'completed', 'cancelled']
+    > &
+      Schema.Attribute.DefaultTo<'pending'>;
     appliedDate: Schema.Attribute.String;
     color: Schema.Attribute.String & Schema.Attribute.DefaultTo<'#3b82f6'>;
     company: Schema.Attribute.String;
@@ -485,10 +489,6 @@ export interface ApiApplicationApplication extends Struct.CollectionTypeSchema {
       Schema.Attribute.DefaultTo<'\u0421\u043C\u0435\u043D\u0430'>;
     salary: Schema.Attribute.String;
     scheduleDate: Schema.Attribute.String;
-    status: Schema.Attribute.Enumeration<
-      ['pending', 'reviewing', 'active', 'rejected', 'completed', 'cancelled']
-    > &
-      Schema.Attribute.DefaultTo<'pending'>;
     statusLabel: Schema.Attribute.String &
       Schema.Attribute.DefaultTo<'\u041E\u0436\u0438\u0434\u0430\u0435\u0442'>;
     updatedAt: Schema.Attribute.DateTime;
