@@ -94,8 +94,18 @@
     },
     "createdByRole": {
       "type": "enumeration",
-      "enum": ["admin"],
+      "enum": ["admin", "employer"],
       "default": "admin"
+    },
+    "moderationStatus": {
+      "type": "enumeration",
+      "enum": ["pending", "published", "rejected"],
+      "default": "published"
+    },
+    "owner": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "plugin::users-permissions.user"
     },
     "applications": {
       "type": "relation",

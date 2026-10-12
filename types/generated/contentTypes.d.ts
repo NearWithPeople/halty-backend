@@ -495,6 +495,7 @@ export interface ApiApplicationApplication extends Struct.CollectionTypeSchema {
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
     vacancy: Schema.Attribute.Relation<'manyToOne', 'api::vacancy.vacancy'>;
+    vacancyDocumentId: Schema.Attribute.String;
     walkTime: Schema.Attribute.String;
   };
 }
@@ -532,7 +533,7 @@ export interface ApiVacancyVacancy extends Struct.CollectionTypeSchema {
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
-    createdByRole: Schema.Attribute.Enumeration<['admin']> &
+    createdByRole: Schema.Attribute.Enumeration<['admin', 'employer']> &
       Schema.Attribute.DefaultTo<'admin'>;
     description: Schema.Attribute.Text & Schema.Attribute.Required;
     employerName: Schema.Attribute.String &
@@ -550,6 +551,14 @@ export interface ApiVacancyVacancy extends Struct.CollectionTypeSchema {
     > &
       Schema.Attribute.Private;
     locationName: Schema.Attribute.String & Schema.Attribute.Required;
+    moderationStatus: Schema.Attribute.Enumeration<
+      ['pending', 'published', 'rejected']
+    > &
+      Schema.Attribute.DefaultTo<'published'>;
+    owner: Schema.Attribute.Relation<
+      'manyToOne',
+      'plugin::users-permissions.user'
+    >;
     payoutType: Schema.Attribute.String & Schema.Attribute.Required;
     publishedAt: Schema.Attribute.DateTime;
     requirements: Schema.Attribute.JSON & Schema.Attribute.DefaultTo<[]>;
@@ -1021,12 +1030,16 @@ export interface PluginUsersPermissionsUser
     draftAndPublish: false;
   };
   attributes: {
+    accountRole: Schema.Attribute.Enumeration<['user', 'employer', 'admin']> &
+      Schema.Attribute.DefaultTo<'user'>;
     blocked: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
+    companyName: Schema.Attribute.String;
     confirmationToken: Schema.Attribute.String & Schema.Attribute.Private;
     confirmed: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<false>;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
+    displayName: Schema.Attribute.String;
     email: Schema.Attribute.Email &
       Schema.Attribute.Required &
       Schema.Attribute.SetMinMaxLength<{

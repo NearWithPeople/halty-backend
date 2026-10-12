@@ -80,6 +80,9 @@
       "type": "json",
       "default": []
     },
+    "vacancyDocumentId": {
+      "type": "string"
+    },
     "messages": {
       "type": "json",
       "default": []

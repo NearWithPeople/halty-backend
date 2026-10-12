@@ -2,7 +2,45 @@ import { factories } from '@strapi/strapi';
 import type { JSONValue } from '@strapi/types/dist/utils/json';
 import { requireAuthenticatedUser } from '../../../helpers/inject-owner';
 
-type AuthUser = { id?: number; email?: string };
+type AuthUser = {
+  id?: number;
+  email?: string;
+  accountRole?: 'user' | 'employer' | 'admin';
+  companyName?: string;
+};
+
+type AppDoc = {
+  owner?: { id?: number };
+  company?: string;
+  vacancy?: { documentId?: string; owner?: { id?: number } } | string | null;
+  vacancyDocumentId?: string;
+  messages?: unknown[];
+  applicationStatus?: string;
+};
+
+function accountRoleOf(user: AuthUser | undefined): 'user' | 'employer' | 'admin' {
+  if (user?.accountRole === 'employer' || user?.accountRole === 'admin' || user?.accountRole === 'user') {
+    return user.accountRole;
+  }
+  if (isAdminUser(user)) return 'admin';
+  return 'user';
+}
+
+function canAccessApplication(app: AppDoc, user: AuthUser, userId: number): boolean {
+  if (accountRoleOf(user) === 'admin') return true;
+  if (app.owner?.id === userId) return true;
+  if (accountRoleOf(user) !== 'employer') return false;
+  const vacancy = app.vacancy;
+  const vacancyOwnerId = vacancy && typeof vacancy === 'object' ? vacancy.owner?.id : undefined;
+  if (vacancyOwnerId === userId) return true;
+  const company = user.companyName?.trim().toLowerCase();
+  return Boolean(company && app.company && app.company.toLowerCase() === company);
+}
+
+const APP_POPULATE = {
+  owner: true,
+  vacancy: { populate: { owner: true } },
+} as const;
 
 interface ChatMessageJson {
   id: string;
@@ -44,8 +82,38 @@ type ApplicationDoc = Record<string, unknown>;
 
 function toApiApplication(doc: ApplicationDoc | null): ApplicationDoc | null {
   if (!doc) return doc;
-  const { applicationStatus, ...rest } = doc;
-  return { ...rest, status: applicationStatus ?? 'pending' };
+  const { applicationStatus, vacancyDocumentId, vacancy, ...rest } = doc as ApplicationDoc & {
+    vacancy?: AppDoc['vacancy'];
+  };
+  const fromRelation =
+    vacancy && typeof vacancy === 'object' ? vacancy.documentId : typeof vacancy === 'string' ? vacancy : undefined;
+  const safeVacancy =
+    vacancy && typeof vacancy === 'object'
+      ? (() => {
+          const { owner: vacancyOwner, ...vacancyRest } = vacancy as Record<string, unknown> & {
+            owner?: { id?: number };
+          };
+          return {
+            ...vacancyRest,
+            createdByUserId: vacancyOwner?.id != null ? String(vacancyOwner.id) : undefined,
+          };
+        })()
+      : vacancy;
+  const owner = rest.owner as { password?: string; resetPasswordToken?: string; confirmationToken?: string } | undefined;
+  const safeOwner =
+    owner && typeof owner === 'object'
+      ? (() => {
+          const { password: _password, resetPasswordToken: _reset, confirmationToken: _token, ...ownerRest } = owner;
+          return ownerRest;
+        })()
+      : owner;
+  return {
+    ...rest,
+    owner: safeOwner,
+    vacancy: safeVacancy,
+    status: applicationStatus ?? 'pending',
+    vacancyId: vacancyDocumentId ?? fromRelation,
+  };
 }
 
 function toApiApplications(docs: ApplicationDoc[]): ApplicationDoc[] {
@@ -64,13 +132,23 @@ export default factories.createCoreController('api::application.application', ({
   async find(ctx) {
     requireAuthenticatedUser(ctx);
     const user = ctx.state.user as AuthUser;
-    const isAdmin = isAdminUser(user);
-
-    const filters = isAdmin ? {} : { owner: { id: user.id } };
+    const role = accountRoleOf(user);
+    const company = user.companyName?.trim();
+    const filters =
+      role === 'admin'
+        ? {}
+        : role === 'employer'
+          ? {
+              $or: [
+                { vacancy: { owner: { id: user.id } } },
+                ...(company ? [{ company: { $eq: company } }] : []),
+              ],
+            }
+          : { owner: { id: user.id } };
 
     const data = await strapi.documents('api::application.application').findMany({
       filters,
-      populate: ctx.query.populate ?? '*',
+      populate: APP_POPULATE,
     });
 
     const applications = toApiApplications(data as unknown as ApplicationDoc[]);
@@ -85,12 +163,10 @@ export default factories.createCoreController('api::application.application', ({
 
     const data = await strapi.documents('api::application.application').findOne({
       documentId,
-      populate: ctx.query.populate ?? '*',
+      populate: APP_POPULATE,
     });
 
-    const owner = data as { owner?: { id?: number } } | null;
-    const ownerId = owner?.owner?.id;
-    if (!data || (ownerId !== userId && !isAdminUser(user))) {
+    if (!data || !canAccessApplication(data as AppDoc, user, userId)) {
       return ctx.notFound('Application not found');
     }
 
@@ -99,6 +175,10 @@ export default factories.createCoreController('api::application.application', ({
 
   async create(ctx) {
     const userId = requireAuthenticatedUser(ctx);
+    const user = ctx.state.user as AuthUser;
+    if (accountRoleOf(user) !== 'user') {
+      return ctx.forbidden('Отклик может отправить исполнитель');
+    }
     const body = { ...(ctx.request.body?.data ?? {}) };
 
     const vacancyRef = body.vacancy;
@@ -118,7 +198,7 @@ export default factories.createCoreController('api::application.application', ({
       status: 'published',
     });
 
-    if (!vacancy) {
+    if (!vacancy || (vacancy as { moderationStatus?: string }).moderationStatus === 'pending' || (vacancy as { moderationStatus?: string }).moderationStatus === 'rejected') {
       return ctx.notFound('Vacancy not found');
     }
 
@@ -159,11 +239,16 @@ export default factories.createCoreController('api::application.application', ({
         : Array.isArray(v.requirements)
           ? v.requirements
           : [],
+      vacancyDocumentId,
       messages: asJsonMessages([welcomeMessage(String(v.title ?? 'смену'))]),
     };
 
-    const data = await strapi.documents('api::application.application').create({
+    const created = await strapi.documents('api::application.application').create({
       data: payload,
+    });
+    const data = await strapi.documents('api::application.application').findOne({
+      documentId: created.documentId,
+      populate: APP_POPULATE,
     });
 
     return { data: toApiApplication(data as unknown as ApplicationDoc) };
@@ -176,12 +261,10 @@ export default factories.createCoreController('api::application.application', ({
 
     const existing = await strapi.documents('api::application.application').findOne({
       documentId,
-      populate: ['owner'],
+      populate: APP_POPULATE,
     });
 
-    const owner = existing as { owner?: { id?: number } } | null;
-    const ownerId = owner?.owner?.id;
-    if (!existing || (ownerId !== userId && !isAdminUser(user))) {
+    if (!existing || !canAccessApplication(existing as AppDoc, user, userId)) {
       return ctx.notFound('Application not found');
     }
 
@@ -201,13 +284,14 @@ export default factories.createCoreController('api::application.application', ({
 
     const existing = await strapi.documents('api::application.application').findOne({
       documentId,
-      populate: ['owner'],
+      populate: APP_POPULATE,
     });
 
-    const owner = existing as { owner?: { id?: number } } | null;
-    const ownerId = owner?.owner?.id;
-    if (!existing || (ownerId !== userId && !isAdminUser(user))) {
+    if (!existing || !canAccessApplication(existing as AppDoc, user, userId)) {
       return ctx.notFound('Application not found');
+    }
+    if (accountRoleOf(user) === 'user' && status !== undefined && status !== 'cancelled' && status !== 'pending') {
+      return ctx.forbidden('Исполнитель может только отменить отклик');
     }
 
     const patch: Record<string, unknown> = {};
@@ -234,7 +318,7 @@ export default factories.createCoreController('api::application.application', ({
     const userId = requireAuthenticatedUser(ctx);
     const user = ctx.state.user as AuthUser;
     const documentId = ctx.params.id;
-    const { text, senderRole, senderName } = ctx.request.body ?? {};
+    const { text, senderRole, senderName, id: clientMessageId } = ctx.request.body ?? {};
 
     if (!text || typeof text !== 'string' || !text.trim()) {
       return ctx.badRequest('text is required');
@@ -242,18 +326,16 @@ export default factories.createCoreController('api::application.application', ({
 
     const existing = await strapi.documents('api::application.application').findOne({
       documentId,
-      populate: ['owner'],
+      populate: APP_POPULATE,
     });
 
-    const owner = existing as { owner?: { id?: number }; messages?: unknown[] } | null;
-    const ownerId = owner?.owner?.id;
-    if (!existing || (ownerId !== userId && !isAdminUser(user))) {
+    if (!existing || !canAccessApplication(existing as AppDoc, user, userId)) {
       return ctx.notFound('Application not found');
     }
 
     const from = senderRole === 'admin' || senderRole === 'employer' ? 'employer' : 'user';
     const message: ChatMessageJson = {
-      id: `m-${Date.now()}`,
+      id: typeof clientMessageId === 'string' && clientMessageId.startsWith('msg-') ? clientMessageId : `m-${Date.now()}`,
       text: text.trim(),
       from,
       time: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
@@ -261,7 +343,7 @@ export default factories.createCoreController('api::application.application', ({
       senderName: senderName ?? (from === 'employer' ? 'Координатор Halty (АДМИН)' : 'Вы'),
     };
 
-    const prevMessages = (Array.isArray(owner?.messages) ? owner.messages : []) as ChatMessageJson[];
+    const prevMessages = (Array.isArray((existing as AppDoc).messages) ? (existing as AppDoc).messages : []) as ChatMessageJson[];
     const data = await strapi.documents('api::application.application').update({
       documentId,
       data: {

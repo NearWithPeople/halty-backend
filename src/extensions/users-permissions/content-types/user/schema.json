@@ -65,8 +65,19 @@
       "inversedBy": "users",
       "configurable": false
     },
+    "displayName": {
+      "type": "string"
+    },
     "phone": {
       "type": "string"
+    },
+    "companyName": {
+      "type": "string"
+    },
+    "accountRole": {
+      "type": "enumeration",
+      "enum": ["user", "employer", "admin"],
+      "default": "user"
     },
     "tgUsername": {
       "type": "string"

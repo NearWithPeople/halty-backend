@@ -21,6 +21,7 @@ const SAMPLE_VACANCIES = [
     iconType: 'tree' as const,
     zoneRadius: 45,
     createdByRole: 'admin' as const,
+    moderationStatus: 'published' as const,
   },
   {
     title: 'Барista',
@@ -41,12 +42,17 @@ const SAMPLE_VACANCIES = [
     iconType: 'coffee' as const,
     buildingHeight: 24,
     createdByRole: 'admin' as const,
+    moderationStatus: 'published' as const,
     category: 'horeca' as const,
   },
 ];
 
 export async function seedSampleVacancies(strapi: Core.Strapi) {
-  const existing = await strapi.documents('api::vacancy.vacancy').findMany({ limit: 1 });
+  const existing = await strapi.documents('api::vacancy.vacancy').findMany({
+    status: 'published',
+    filters: { moderationStatus: { $eq: 'published' } },
+    limit: 1,
+  });
   if (existing.length > 0) return;
 
   for (const vacancy of SAMPLE_VACANCIES) {
@@ -57,4 +63,45 @@ export async function seedSampleVacancies(strapi: Core.Strapi) {
   }
 
   strapi.log.info('[seed] Created sample vacancies');
+}
+
+export async function seedAdminUser(strapi: Core.Strapi) {
+  const userService = strapi.plugin('users-permissions').service('user');
+  const existing = await strapi.db.query('plugin::users-permissions.user').findOne({
+    where: { email: 'admin@halty.by' },
+  });
+
+  if (existing) {
+    if (existing.provider !== 'local' || existing.accountRole !== 'admin' || existing.blocked) {
+      await userService.edit(existing.id, {
+        password: 'admin2026',
+        provider: 'local',
+        accountRole: 'admin',
+        confirmed: true,
+        blocked: false,
+        displayName: existing.displayName || 'Админ',
+      });
+      strapi.log.info('[seed] Ensured admin user admin@halty.by');
+    }
+    return;
+  }
+
+  const role = await strapi.db.query('plugin::users-permissions.role').findOne({
+    where: { type: 'authenticated' },
+  });
+  if (!role) return;
+
+  await userService.add({
+    username: 'halty-admin',
+    email: 'admin@halty.by',
+    password: 'admin2026',
+    provider: 'local',
+    displayName: 'Админ',
+    phone: '+375 (29) 000-00-00',
+    accountRole: 'admin',
+    confirmed: true,
+    role: role.id,
+  });
+
+  strapi.log.info('[seed] Created admin user admin@halty.by');
 }

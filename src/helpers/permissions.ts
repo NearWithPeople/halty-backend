@@ -8,7 +8,7 @@ const PERMISSIONS: Record<RoleType, Record<string, string[]>> = {
     'plugin::users-permissions.auth': ['callback', 'connect', 'emailConfirmation', 'forgotPassword', 'register', 'resetPassword', 'sendEmailConfirmation'],
   },
   authenticated: {
-    'api::vacancy.vacancy': ['find', 'findOne', 'nearby', 'search', 'create', 'delete'],
+    'api::vacancy.vacancy': ['find', 'findOne', 'nearby', 'search', 'create', 'update', 'delete', 'moderate'],
     'api::application.application': ['find', 'findOne', 'create', 'update', 'updateStatus', 'addMessage'],
     'plugin::users-permissions.user': ['me', 'update'],
     'plugin::users-permissions.auth': ['connect', 'callback', 'changePassword'],

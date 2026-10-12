@@ -22,5 +22,14 @@ export default {
         middlewares: [],
       },
     },
+    {
+      method: 'PATCH',
+      path: '/vacancies/:id/moderation',
+      handler: 'vacancy.moderate',
+      config: {
+        policies: [],
+        middlewares: [],
+      },
+    },
   ],
 };
