@@ -1,0 +1,67 @@
+# Isolated test stack.
+#
+#   make docker-test
+#
+# Boots a throwaway Strapi instance and runs the existing request collection
+# (docs/REQUESTS.http) through httpyac. Uses its own compose project name,
+# container names and network, so it never disturbs the dev stack from
+# compose.dev.yaml.
+name: halty-test
+
+services:
+  strapi:
+    container_name: strapi-test
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: halty-backend:dev
+    init: true
+    env_file: .env.example  # All variables from .env are injected into the container
+    volumes:
+      - ./config:/opt/app/config
+      - ./src:/opt/app/src
+      - ./types:/opt/app/types  # generated types stay visible on the host
+      - ./package.json:/opt/package.json
+      - ./package-lock.json:/opt/package-lock.json
+      - ./.env:/opt/app/.env  # Needed because Strapi uses dotenv to read .env in development
+      - ./public/uploads:/opt/app/public/uploads
+    # Ephemeral SQLite DB (in-memory), recreated fresh on every test run.
+    # Owned by the non-root `node` user the image runs as.
+    tmpfs:
+      - /opt/app/.tmp:uid=1000,gid=1000,mode=0755,size=512m
+    ports:
+      - "1337:1337"
+    healthcheck:
+      # node:24 ships a global fetch, so no extra tooling is needed in the image
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://localhost:1337/api/vacancies?pagination[pageSize]=1').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    networks:
+      - strapi-test
+
+  httpyac:
+    image: ghcr.io/anweber/httpyac:latest
+    container_name: httpyac-test
+    # Shares Strapi's network namespace, so docs/REQUESTS.http can keep using
+    # http://localhost:1337 without any variable overrides.
+    network_mode: "service:strapi"
+    depends_on:
+      strapi:
+        condition: service_healthy
+    volumes:
+      - ./docs:/data/docs:ro
+    # Override to run a single request, e.g.:
+    #   docker compose -f compose.test.yaml run --rm httpyac \
+    #     send /data/docs/REQUESTS.http --name login
+    command: send /data/docs/REQUESTS.http --all
+
+networks:
+  strapi-test:
+    name: halty-test-strapi
+    driver: bridge
