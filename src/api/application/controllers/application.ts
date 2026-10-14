@@ -80,7 +80,7 @@ function statusLabelFor(status: string): string {
 
 type ApplicationDoc = Record<string, unknown>;
 
-function toApiApplication(doc: ApplicationDoc | null): ApplicationDoc | null {
+export function toApiApplication(doc: ApplicationDoc | null): ApplicationDoc | null {
   if (!doc) return doc;
   const { applicationStatus, vacancyDocumentId, vacancy, ...rest } = doc as ApplicationDoc & {
     vacancy?: AppDoc['vacancy'];

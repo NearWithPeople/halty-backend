@@ -61,6 +61,39 @@ services:
     #     send /data/docs/REQUESTS.http --name login
     command: send /data/docs/REQUESTS.http --all
 
+  # Jest unit/smoke tests (see tests/ and the Strapi testing guide).
+  # Kept behind a profile so `make docker-test` (httpyac) is unaffected.
+  # Run with: make docker-test-jest
+  jest:
+    profiles: ["jest"]
+    container_name: jest-test
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: halty-backend:dev
+    init: true
+    env_file: .env.example
+    environment:
+      NODE_ENV: test
+      DATABASE_CLIENT: sqlite
+      DATABASE_FILENAME: ":memory:"
+      PORT: "0"
+    volumes:
+      - ./config:/opt/app/config
+      - ./src:/opt/app/src
+      - ./tests:/opt/app/tests
+      - ./types:/opt/app/types
+      - ./package.json:/opt/package.json
+      - ./package-lock.json:/opt/package-lock.json
+      - ./.env:/opt/app/.env
+      - ./public/uploads:/opt/app/public/uploads
+      - ./coverage:/opt/app/coverage  # coverage report written back to the host
+    tmpfs:
+      - /opt/app/.tmp:uid=1000,gid=1000,mode=0755,size=512m
+    command: npm run test:coverage
+    networks:
+      - strapi-test
+
 networks:
   strapi-test:
     name: halty-test-strapi
