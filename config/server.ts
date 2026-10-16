@@ -9,6 +9,14 @@ const config = ({ env }: Core.Config.Shared.ConfigParams): Core.Config.Server =>
   webhooks: {
     populateRelations: env.bool('WEBHOOKS_POPULATE_RELATIONS', false),
   },
+  logger: {
+    config: {
+      level: env('STRAPI_LOG_LEVEL', 'http'),
+    },
+    startup: {
+      enabled: env.bool('STRAPI_STARTUP_LOGS', true),
+    },
+  },
 });
 
 export default config;

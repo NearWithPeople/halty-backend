@@ -231,6 +231,8 @@ process.env.DATABASE_CLIENT = process.env.DATABASE_CLIENT || 'sqlite';
 process.env.DATABASE_FILENAME = process.env.DATABASE_FILENAME || ':memory:';
 process.env.STRAPI_DISABLE_CRON = 'true';
 process.env.PORT = '0';
+process.env.STRAPI_LOG_LEVEL = process.env.STRAPI_LOG_LEVEL || 'error';
+process.env.STRAPI_STARTUP_LOGS = process.env.STRAPI_STARTUP_LOGS || 'false';
 
 const { createStrapi } = require('@strapi/strapi');
 
