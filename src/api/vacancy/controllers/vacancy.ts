@@ -18,6 +18,15 @@ function accountRole(user: AccountUser | undefined): 'user' | 'employer' | 'admi
   return 'user';
 }
 
+/**
+ * Map a raw `vacancy` document to the public API shape consumed by the
+ * frontend. Replaces the populated `owner` relation with a flat
+ * `createdByUserId` string and defaults `moderationStatus` to `'published'`
+ * when it is unset.
+ *
+ * @param doc - Raw vacancy document (optionally with populated `owner`), or `null`.
+ * @returns The presentation vacancy document, or `null` when `doc` is null.
+ */
 function presentVacancy(doc: Record<string, unknown> | null) {
   if (!doc) return doc;
   const { owner, ...rest } = doc;
@@ -132,6 +141,16 @@ export default factories.createCoreController('api::vacancy.vacancy', ({ strapi 
     return { data };
   },
 
+  /**
+   * Admin-only moderation endpoint. Sets a vacancy's `moderationStatus` to
+   * `'published'` or `'rejected'`.
+   *
+   * Requires an authenticated admin; returns `403` otherwise. Responds `400`
+   * when `status` is neither `'published'` nor `'rejected'`, and `404` when the
+   * vacancy does not exist.
+   *
+   * @example PATCH /api/vacancies/:id/moderation { "status": "published" }
+   */
   async moderate(ctx) {
     requireAuthenticatedUser(ctx);
     const user = ctx.state.user as AccountUser;

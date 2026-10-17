@@ -80,6 +80,16 @@ function statusLabelFor(status: string): string {
 
 type ApplicationDoc = Record<string, unknown>;
 
+/**
+ * Map a raw `application` document to the public API shape consumed by the
+ * frontend. Renames internal fields (`applicationStatus` → `status`,
+ * `vacancyDocumentId` → `vacancyId`), flattens the vacancy relation into its
+ * `documentId` and exposes the vacancy owner as `createdByUserId`. Sensitive
+ * owner fields (`password`, reset/confirmation tokens) are stripped.
+ *
+ * @param doc - Raw application document (with populated `owner`/`vacancy`), or `null`.
+ * @returns The sanitized application document, or `null` when `doc` is null.
+ */
 function toApiApplication(doc: ApplicationDoc | null): ApplicationDoc | null {
   if (!doc) return doc;
   const { applicationStatus, vacancyDocumentId, vacancy, ...rest } = doc as ApplicationDoc & {
