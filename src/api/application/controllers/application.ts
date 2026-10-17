@@ -80,33 +80,15 @@ function statusLabelFor(status: string): string {
 
 type ApplicationDoc = Record<string, unknown>;
 
-function toApiApplication(doc: ApplicationDoc | null): ApplicationDoc | null {
+export function toApiApplication(doc: ApplicationDoc | null): ApplicationDoc | null {
   if (!doc) return doc;
-  const { applicationStatus, vacancyDocumentId, vacancy, ...rest } = doc as ApplicationDoc & {
-    vacancy?: AppDoc['vacancy'];
-  };
-  const fromRelation =
-    vacancy && typeof vacancy === 'object' ? vacancy.documentId : typeof vacancy === 'string' ? vacancy : undefined;
-  const safeVacancy =
-    vacancy && typeof vacancy === 'object'
-      ? (() => {
-          const { owner: vacancyOwner, ...vacancyRest } = vacancy as Record<string, unknown> & {
-            owner?: { id?: number };
-          };
-          return {
-            ...vacancyRest,
-            createdByUserId: vacancyOwner?.id != null ? String(vacancyOwner.id) : undefined,
-          };
-        })()
-      : vacancy;
+  
+  const { applicationStatus, vacancyDocumentId, vacancy, ...rest } = doc as ApplicationDoc & { vacancy?: AppDoc['vacancy']; };
+  const fromRelation = documentIdGetter(vacancy);
+  const safeVacancy = vacancy && typeof vacancy === 'object' ? convertVacancy(vacancy) : vacancy;
   const owner = rest.owner as { password?: string; resetPasswordToken?: string; confirmationToken?: string } | undefined;
-  const safeOwner =
-    owner && typeof owner === 'object'
-      ? (() => {
-          const { password: _password, resetPasswordToken: _reset, confirmationToken: _token, ...ownerRest } = owner;
-          return ownerRest;
-        })()
-      : owner;
+  const safeOwner = owner && typeof owner === 'object' ? cutOwner(owner) : owner;
+  
   return {
     ...rest,
     owner: safeOwner,
@@ -118,6 +100,32 @@ function toApiApplication(doc: ApplicationDoc | null): ApplicationDoc | null {
 
 function toApiApplications(docs: ApplicationDoc[]): ApplicationDoc[] {
   return docs.map((doc) => toApiApplication(doc) as ApplicationDoc);
+}
+
+function documentIdGetter(vacancy: unknown): string | undefined {
+  if (typeof vacancy === 'string') {
+    return vacancy;
+  }
+  
+  if (vacancy !== null && typeof vacancy === 'object') {
+    return (vacancy as { documentId?: string }).documentId;
+  }
+  
+    return undefined;
+}
+
+function convertVacancy(vacancy: object) {
+  const { owner: vacancyOwner, ...vacancyRest } = vacancy as Record<string, unknown> & { owner?: { id?: number }; };
+
+  return {
+    ...vacancyRest,
+    createdByUserId: vacancyOwner?.id != null ? String(vacancyOwner.id) : undefined,
+  };
+}
+
+function cutOwner(owner: { password?: string; resetPasswordToken?: string; confirmationToken?: string }) {
+  const { password: _password, resetPasswordToken: _reset, confirmationToken: _token, ...ownerRest } = owner;
+  return ownerRest;
 }
 
 function toInternalData(data: ApplicationDoc): ApplicationDoc {
