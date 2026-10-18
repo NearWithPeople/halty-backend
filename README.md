@@ -42,6 +42,26 @@ npm run develop
 1. Можно использовать [httpyac](https://httpyac.github.io/) для посылки запросов
 2. httpyac может брать переменные из .env файла
 
+Тесты в Docker (изолированный стек, не мешает `compose.dev.yaml`):
+
+```bash
+make docker-test        # поднять Strapi + прогнать docs/REQUESTS.http через httpyac
+make docker-test-up     # поднять только тестовый Strapi на :1337
+make docker-test-down   # погасить стек (tmpfs-БД удаляется вместе с контейнером)
+```
+
+- Контейнер `httpyac` использует то же сетевое пространство имён, что и `strapi`
+  (`network_mode: service:strapi`), поэтому `docs/REQUESTS.http` работает без правок:
+  `@baseUrl = http://localhost:1337`.
+- Прогнать отдельный запрос вручную:
+
+  ```bash
+  docker compose -f compose.test.yaml run --rm httpyac \
+    send /data/docs/REQUESTS.http --name login
+  ```
+- Тестовая SQLite-база живёт в `tmpfs` и пересоздаётся на каждом запуске
+  (чистая БД → bootstrap заново применяет права и сиды).
+
 ## Маппинг UpLift → Halty
 
 | UpLift | Halty | Назначение |

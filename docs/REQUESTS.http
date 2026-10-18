@@ -10,41 +10,64 @@
 # Base URL (local):
 @baseUrl = http://localhost:1337
 @api = {{baseUrl}}/api
+#
+# Запуск всего файла целиком:  httpyac send docs/REQUESTS.http --all
+# (в Docker: make docker-test). Запросы пронумерованы и выполняются по порядку,
+# ответы предыдущих запросов переиспользуются через `# @ref <name>`.
+#
+# Тестовые креды:
+#   user:  test@halty.by / Test1234!   (регистрируется запросом 6)
+#   admin: admin@halty.by / admin2026  (сидируется бутстрапом Strapi)
 
 ### ─── Health check (как strapiClient.checkHealth) ─────────────────
 GET {{api}}/vacancies?pagination[pageSize]=1
 
+?? status == 200
+
 ### ─── 1. Публичный контент: список вакансий ───────────────────────
 # Аналог: GET /api/exercises?locale=en&populate=*
+# @name vacancies
 GET {{api}}/vacancies?populate=*&pagination[pageSize]=100
+
+?? status == 200
 
 ### ─── 2. Фильтр по категории ───────────────────────────────────────
 # Аналог: GET /api/categories?filters[filterType][$eq]=fitness
 GET {{api}}/vacancies?filters[category][$eq]=parks_green&populate=*
 
+?? status == 200
+
 ### ─── 3. Поиск по тексту (custom route) ───────────────────────────
 # Аналог: GET /api/exercises/search?search=full+body
 GET {{api}}/vacancies/search?search=парк&pagination[page]=1&pagination[pageSize]=20
 
+?? status == 200
+
 ### ─── 4. Вакансии рядом (spatial, custom route) ───────────────────
 GET {{api}}/vacancies/nearby?lat=53.9045&lng=27.5615&radius=3000
 
-### ─── 5. Одна вакансия ────────────────────────────────────────────
-# Замените :documentId на реальный id из ответа выше
-GET {{api}}/vacancies/:documentId?populate=*
+?? status == 200
+
+### ─── 5. Одна вакансия (documentId берём из списка выше) ──────────
+# @ref vacancies
+GET {{api}}/vacancies/{{vacancies.data[0].documentId}}?populate=*
+
+?? status == 200
 
 ### ─── 6. Регистрация пользователя ─────────────────────────────────
 # Аналог UpLift: POST /api/auth/local/register
+# @name registerUser
 POST {{api}}/auth/local/register
 Content-Type: application/json
 
 {
   "username": "testuser",
   "email": "test@halty.by",
-  "password": "Test1234!"
+  "password": "Test1234!",
+  "accountRole": "user"
 }
 
-### ─── 7. Логин ────────────────────────────────────────────────────
+### ─── 7. Логин пользователя ───────────────────────────────────────
 # Аналог UpLift: POST /api/auth/local
 # @name login
 POST {{api}}/auth/local
@@ -55,17 +78,33 @@ Content-Type: application/json
   "password": "Test1234!"
 }
 
-### Сохраните JWT из ответа:
-@jwt = {{login.response.body.jwt}}
+?? status == 200
+
+### ─── 7b. Логин админа (сидируется бутстрапом) ────────────────────
+# @name adminLogin
+POST {{api}}/auth/local
+Content-Type: application/json
+
+{
+  "identifier": "admin@halty.by",
+  "password": "admin2026"
+}
+
+?? status == 200
 
 ### ─── 8. Текущий пользователь ─────────────────────────────────────
-# Аналог UpLift: GET /api/users/me?populate[plan]=*
+# Аналог UpLift: GET /api/users/me
+# @ref login
 GET {{api}}/users/me
-Authorization: Bearer {{jwt}}
+Authorization: Bearer {{login.jwt}}
 
-### ─── 9. Создать вакансию (admin/authenticated) ─────────────────────
+?? status == 200
+
+### ─── 9. Создать вакансию (admin — публикуется сразу) ──────────────
+# @name createVacancy
+# @ref adminLogin
 POST {{api}}/vacancies
-Authorization: Bearer {{jwt}}
+Authorization: Bearer {{adminLogin.jwt}}
 Content-Type: application/json
 
 {
@@ -89,15 +128,20 @@ Content-Type: application/json
   }
 }
 
+?? status == 200
+
 ### ─── 10. Откликнуться на вакансию (owner-scoped) ───────────────────
 # Аналог UpLift: POST /api/favorites { data: { exercise: 123 } }
+# @name createApplication
+# @ref login
+# @ref createVacancy
 POST {{api}}/applications
-Authorization: Bearer {{jwt}}
+Authorization: Bearer {{login.jwt}}
 Content-Type: application/json
 
 {
   "data": {
-    "vacancy": "VACANCY_DOCUMENT_ID",
+    "vacancy": "{{createVacancy.data.documentId}}",
     "role": "Смена",
     "company": "Минскзеленстрой",
     "location": "Сквер Адама Міцкевіча",
@@ -116,15 +160,22 @@ Content-Type: application/json
   }
 }
 
+?? status == 200
+
 ### ─── 11. Мои отклики (только свои, owner filter) ───────────────────
 # Аналог UpLift: GET /api/favorites?populate[exercise]=*
+# @ref login
 GET {{api}}/applications?populate=*
-Authorization: Bearer {{jwt}}
+Authorization: Bearer {{login.jwt}}
 
-### ─── 12. Обновить отклик ────────────────────────────────────
+?? status == 200
+
+### ─── 12. Обновить отклик ──────────────────────────────────────────
 # Аналог UpLift: PUT /api/statistics/:id
-PUT {{api}}/applications/{{APPLICATION_DOCUMENT_ID}}
-Authorization: Bearer {{jwt}}
+# @ref login
+# @ref createApplication
+PUT {{api}}/applications/{{createApplication.data.documentId}}
+Authorization: Bearer {{login.jwt}}
 Content-Type: application/json
 
 {
@@ -135,9 +186,13 @@ Content-Type: application/json
   }
 }
 
-### ─── 13. Обновить статус отклика ────────────────────────────────────
-PATCH {{api}}/applications/{{APPLICATION_DOCUMENT_ID}}/status
-Authorization: Bearer {{jwt}}
+?? status == 200
+
+### ─── 13. Обновить статус отклика (admin) ──────────────────────────
+# @ref adminLogin
+# @ref createApplication
+PATCH {{api}}/applications/{{createApplication.data.documentId}}/status
+Authorization: Bearer {{adminLogin.jwt}}
 Content-Type: application/json
 
 {
@@ -146,18 +201,27 @@ Content-Type: application/json
     "step": 2
 }
 
-### ─── 14. Получить отклики ────────────────────────────────────
+?? status == 200
+
+### ─── 14. Получить отклики ─────────────────────────────────────────
+# @ref login
 GET {{api}}/applications
-Authorization: Bearer {{jwt}}
+Authorization: Bearer {{login.jwt}}
 Content-Type: application/json
 
-### ─── 15. Отправить сообщение на отклик ────────────────────────────────────
-POST {{api}}/applications/{{APPLICATION_DOCUMENT_ID}}/messages
-Authorization: Bearer {{jwt}}
+?? status == 200
+
+### ─── 15. Отправить сообщение на отклик ────────────────────────────
+# @ref login
+# @ref createApplication
+POST {{api}}/applications/{{createApplication.data.documentId}}/messages
+Authorization: Bearer {{login.jwt}}
 Content-Type: application/json
 
 {
-    "text": "Пашол нахуй",
+    "text": "Тестовое сообщение по отклику",
     "senderRole": "employer",
     "senderName": "Илья"
 }
+
+?? status == 200
