@@ -22,7 +22,6 @@ function accountRoleOf(user: AuthUser | undefined): 'user' | 'employer' | 'admin
   if (user?.accountRole === 'employer' || user?.accountRole === 'admin' || user?.accountRole === 'user') {
     return user.accountRole;
   }
-  if (isAdminUser(user)) return 'admin';
   return 'user';
 }
 
@@ -53,11 +52,6 @@ interface ChatMessageJson {
 
 function asJsonMessages(messages: ChatMessageJson[]): JSONValue {
   return messages as unknown as JSONValue;
-}
-
-function isAdminUser(user: AuthUser | undefined): boolean {
-  const email = user?.email?.toLowerCase() ?? '';
-  return email.includes('admin');
 }
 
 function welcomeMessage(vacancyTitle: string): ChatMessageJson {

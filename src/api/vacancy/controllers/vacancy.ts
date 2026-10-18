@@ -14,7 +14,7 @@ function accountRole(user: AccountUser | undefined): 'user' | 'employer' | 'admi
   if (user?.accountRole === 'employer' || user?.accountRole === 'admin' || user?.accountRole === 'user') {
     return user.accountRole;
   }
-  if ((user?.email ?? '').toLowerCase().includes('admin')) return 'admin';
+  
   return 'user';
 }
 
