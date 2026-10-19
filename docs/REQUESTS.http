@@ -225,3 +225,47 @@ Content-Type: application/json
 }
 
 ?? status == 200
+
+### ─── 16. PUT /users/:id — whitelist полей, нельзя стать админом ───
+# Разрешены только displayName, phone, tgUsername, tgConnected, companyName.
+# accountRole, role, email и username должны игнорироваться.
+# @name updateOwnProfile
+# @ref login
+PUT {{api}}/users/{{login.user.id}}
+Authorization: Bearer {{login.jwt}}
+Content-Type: application/json
+
+{
+  "displayName": "Test User Updated",
+  "phone": "+375291234567",
+  "tgUsername": "testuser_tg",
+  "tgConnected": true,
+  "companyName": "Test Company",
+  "accountRole": "admin",
+  "role": 2,
+  "email": "attacker@halty.by",
+  "username": "attacker"
+}
+
+?? status == 200
+?? js response.parsedBody.displayName == Test User Updated
+?? js response.parsedBody.phone == +375291234567
+?? js response.parsedBody.tgUsername == testuser_tg
+?? js response.parsedBody.tgConnected == true
+?? js response.parsedBody.companyName == Test Company
+?? js response.parsedBody.accountRole != admin
+?? js response.parsedBody.email == test@halty.by
+?? js response.parsedBody.username == testuser
+
+### ─── 17. PUT /users/:id — нельзя обновить чужой профиль ───────────
+# @ref login
+# @ref adminLogin
+PUT {{api}}/users/{{adminLogin.user.id}}
+Authorization: Bearer {{login.jwt}}
+Content-Type: application/json
+
+{
+  "displayName": "Hacked Admin"
+}
+
+?? status == 404
