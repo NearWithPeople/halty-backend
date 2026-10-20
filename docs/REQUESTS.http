@@ -170,23 +170,305 @@ Authorization: Bearer {{login.jwt}}
 
 ?? status == 200
 
-### ─── 12. Обновить отклик ──────────────────────────────────────────
-# Аналог UpLift: PUT /api/statistics/:id
+### ─── 12. Статусы/шаги отклика: права ролей ────────────────────────
+# Исполнитель может только cancelled и не может менять шаг.
+# Работодатель своей вакансии и админ — статусы reviewing/active/rejected/completed, шаги 2–5.
+
+### ─── 12.0. Регистрация работодателя ────────────────────────────────
+# @name registerEmployer
+POST {{api}}/auth/local/register
+Content-Type: application/json
+
+{
+  "username": "employer",
+  "email": "employer@halty.by",
+  "password": "Test1234!",
+  "accountRole": "employer",
+  "companyName": "Минскзеленстрой"
+}
+
+?? status == 200
+
+### ─── 12.1. Логин работодателя ──────────────────────────────────────
+# @name employerLogin
+POST {{api}}/auth/local
+Content-Type: application/json
+
+{
+  "identifier": "employer@halty.by",
+  "password": "Test1234!"
+}
+
+?? status == 200
+
+### ─── 12.2. Работодатель создаёт свою вакансию ──────────────────────
+# @name createEmployerVacancy
+# @ref employerLogin
+POST {{api}}/vacancies
+Authorization: Bearer {{employerLogin.jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "title": "Тестовая смена работодателя",
+    "company": "Минскзеленстрой",
+    "salary": "100 BYN / смена",
+    "category": "parks_green",
+    "categoryLabel": "Озеленение",
+    "attachmentType": "ground_zone",
+    "lat": 53.9,
+    "lng": 27.55,
+    "locationName": "Тестовая локация",
+    "description": "Вакансия для проверки прав на статусы.",
+    "schedule": "Сегодня",
+    "payoutType": "Ежедневно"
+  }
+}
+
+?? status == 200
+
+### ─── 12.3. Админ публикует вакансию работодателя ───────────────────
+# @ref adminLogin
+# @ref createEmployerVacancy
+PATCH {{api}}/vacancies/{{createEmployerVacancy.data.documentId}}/moderation
+Authorization: Bearer {{adminLogin.jwt}}
+Content-Type: application/json
+
+{
+  "status": "published"
+}
+
+?? status == 200
+
+### ─── 12.4. Исполнитель откликается на вакансию работодателя ────────
+# @name createEmployerApplication
 # @ref login
-# @ref createApplication
-PUT {{api}}/applications/{{createApplication.data.documentId}}
+# @ref createEmployerVacancy
+POST {{api}}/applications
 Authorization: Bearer {{login.jwt}}
 Content-Type: application/json
 
 {
   "data": {
+    "vacancy": "{{createEmployerVacancy.data.documentId}}"
+  }
+}
+
+?? status == 200
+
+### ─── 12.5. Исполнитель может отменить свой отклик ───────────────────
+# @ref login
+# @ref createEmployerApplication
+PUT {{api}}/applications/{{createEmployerApplication.data.documentId}}
+Authorization: Bearer {{login.jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "status": "cancelled"
+  }
+}
+
+?? status == 200
+?? js response.parsedBody.data.status == cancelled
+?? js response.parsedBody.data.statusLabel == Отказ
+
+### ─── 12.6. Исполнитель не может поставить active ────────────────────
+# @ref login
+# @ref createEmployerApplication
+PUT {{api}}/applications/{{createEmployerApplication.data.documentId}}
+Authorization: Bearer {{login.jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "status": "active"
+  }
+}
+
+?? status == 403
+?? js response.parsedBody.error.message == Исполнитель может только отменить отклик
+
+### ─── 12.7. Исполнитель не может поставить шаг 5 ────────────────────
+# @ref login
+# @ref createEmployerApplication
+PUT {{api}}/applications/{{createEmployerApplication.data.documentId}}
+Authorization: Bearer {{login.jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "progressStep": 5
+  }
+}
+
+?? status == 403
+?? js response.parsedBody.error.message == Исполнитель не может менять шаг отклика
+
+### ─── 12.8. Негативные попытки не изменили отклик ───────────────────
+# @ref login
+# @ref createEmployerApplication
+GET {{api}}/applications/{{createEmployerApplication.data.documentId}}
+Authorization: Bearer {{login.jwt}}
+
+?? status == 200
+?? js response.parsedBody.data.status == cancelled
+?? js response.parsedBody.data.progressStep == 1
+
+### ─── 12.9. Работодатель своей вакансии: reviewing + шаг 2 ───────────
+# @ref employerLogin
+# @ref createEmployerApplication
+PUT {{api}}/applications/{{createEmployerApplication.data.documentId}}
+Authorization: Bearer {{employerLogin.jwt}}
+Content-Type: application/json
+
+{
+  "data": {
     "status": "reviewing",
-    "statusLabel": "На рассмотрении",
     "progressStep": 2
   }
 }
 
 ?? status == 200
+?? js response.parsedBody.data.status == reviewing
+?? js response.parsedBody.data.progressStep == 2
+
+### ─── 12.10. Работодатель своей вакансии: active + шаг 3 ─────────────
+# @ref employerLogin
+# @ref createEmployerApplication
+PUT {{api}}/applications/{{createEmployerApplication.data.documentId}}
+Authorization: Bearer {{employerLogin.jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "status": "active",
+    "progressStep": 3
+  }
+}
+
+?? status == 200
+?? js response.parsedBody.data.status == active
+?? js response.parsedBody.data.progressStep == 3
+
+### ─── 12.11. Работодатель своей вакансии: rejected + шаг 4 ───────────
+# @ref employerLogin
+# @ref createEmployerApplication
+PUT {{api}}/applications/{{createEmployerApplication.data.documentId}}
+Authorization: Bearer {{employerLogin.jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "status": "rejected",
+    "progressStep": 4
+  }
+}
+
+?? status == 200
+?? js response.parsedBody.data.status == rejected
+?? js response.parsedBody.data.progressStep == 4
+
+### ─── 12.12. Работодатель своей вакансии: completed + шаг 5 ──────────
+# @ref employerLogin
+# @ref createEmployerApplication
+PUT {{api}}/applications/{{createEmployerApplication.data.documentId}}
+Authorization: Bearer {{employerLogin.jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "status": "completed",
+    "progressStep": 5
+  }
+}
+
+?? status == 200
+?? js response.parsedBody.data.status == completed
+?? js response.parsedBody.data.progressStep == 5
+
+### ─── 12.13. Работодатель не может поставить pending ─────────────────
+# @ref employerLogin
+# @ref createEmployerApplication
+PUT {{api}}/applications/{{createEmployerApplication.data.documentId}}
+Authorization: Bearer {{employerLogin.jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "status": "pending"
+  }
+}
+
+?? status == 403
+?? js response.parsedBody.error.message == Работодатель может устанавливать только статусы: reviewing, active, rejected, completed
+
+### ─── 12.14. Работодатель не может поставить шаг 1 ───────────────────
+# @ref employerLogin
+# @ref createEmployerApplication
+PUT {{api}}/applications/{{createEmployerApplication.data.documentId}}
+Authorization: Bearer {{employerLogin.jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "progressStep": 1
+  }
+}
+
+?? status == 403
+?? js response.parsedBody.error.message == Работодатель может устанавливать шаг от 2 до 5
+
+### ─── 12.15. Работодатель не может поставить шаг 6 ───────────────────
+# @ref employerLogin
+# @ref createEmployerApplication
+PUT {{api}}/applications/{{createEmployerApplication.data.documentId}}
+Authorization: Bearer {{employerLogin.jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "progressStep": 6
+  }
+}
+
+?? status == 403
+?? js response.parsedBody.error.message == Работодатель может устанавливать шаг от 2 до 5
+
+### ─── 12.16. Работодатель не может менять чужую вакансию ─────────────
+# Компания совпадает, поэтому отклик доступен, но вакансия принадлежит админу.
+# @ref employerLogin
+# @ref createApplication
+PUT {{api}}/applications/{{createApplication.data.documentId}}
+Authorization: Bearer {{employerLogin.jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "status": "active"
+  }
+}
+
+?? status == 403
+?? js response.parsedBody.error.message == Менять статус может только работодатель этой вакансии
+
+### ─── 12.17. Админ может менять статус и шаг через PUT ────────────────
+# @ref adminLogin
+# @ref createApplication
+PUT {{api}}/applications/{{createApplication.data.documentId}}
+Authorization: Bearer {{adminLogin.jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "status": "completed",
+    "progressStep": 5
+  }
+}
+
+?? status == 200
+?? js response.parsedBody.data.status == completed
+?? js response.parsedBody.data.progressStep == 5
 
 ### ─── 13. Обновить статус отклика (admin) ──────────────────────────
 # @ref adminLogin
