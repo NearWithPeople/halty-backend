@@ -16,6 +16,7 @@ type AppDoc = {
   vacancyDocumentId?: string;
   messages?: unknown[];
   applicationStatus?: string;
+  progressStep?: number;
 };
 
 function accountRoleOf(user: AuthUser | undefined): 'user' | 'employer' | 'admin' {
@@ -70,6 +71,23 @@ function statusLabelFor(status: string): string {
   if (status === 'reviewing') return 'На рассмотрении';
   if (status === 'completed') return 'Завершён';
   return 'Ожидает';
+}
+
+const STEP_LABELS = ['Отправлен', 'Доставлен', 'Просмотрен', 'Подтверждён', 'Смена'];
+
+function stepSystemMessage(step: number): ChatMessageJson {
+  return {
+    id: `m-${Date.now()}`,
+    text: `Шаг заявки: «${STEP_LABELS[step - 1] ?? step}»`,
+    from: 'employer',
+    time: 'Только что',
+    isSystem: true,
+  };
+}
+
+function withStepMessage(messages: unknown, step: number): JSONValue {
+  const prev = Array.isArray(messages) ? (messages as ChatMessageJson[]) : [];
+  return asJsonMessages([...prev, stepSystemMessage(step)]);
 }
 
 type ApplicationDoc = Record<string, unknown>;
@@ -130,6 +148,66 @@ function toInternalData(data: ApplicationDoc): ApplicationDoc {
   if (status !== undefined) internal.applicationStatus = status;
   if (step !== undefined) internal.progressStep = step;
   return internal;
+}
+
+function isVacancyOwner(app: AppDoc, userId: number): boolean {
+  const vacancy = app.vacancy;
+  return Boolean(vacancy && typeof vacancy === 'object' && vacancy.owner?.id === userId);
+}
+
+/**
+ * Checks user privileges for updating application status/progress fields.
+ * Executors may only set `cancelled`; employers may manage statuses and steps
+ * only for their own vacancy; admins may set anything.
+ *
+ * @returns An error message when the update is not allowed, otherwise null.
+ */
+function validateStatusUpdate(
+  app: AppDoc,
+  user: AuthUser,
+  userId: number,
+  status: string | undefined,
+  step: number | undefined,
+): string | null {
+  if (status === undefined && step === undefined) {
+    return null;
+  }
+  const role = accountRoleOf(user);
+  if (role === 'user') {
+    return validateUserStatusUpdate(status, step);
+  }
+  if (role === 'employer') {
+    if (!isVacancyOwner(app, userId)) {
+      return 'Менять статус может только работодатель этой вакансии';
+    }
+    return validateEmployerStatusUpdate(status, step);
+  }
+  return null;
+}
+
+function validateUserStatusUpdate(status: string | undefined, step: number | undefined): string | null {
+  if (status !== undefined && status !== 'cancelled') {
+    return 'Исполнитель может только отменить отклик';
+  }
+  if (step !== undefined) {
+    return 'Исполнитель не может менять шаг отклика';
+  }
+  return null;
+}
+
+function validateEmployerStatusUpdate(status: string | undefined, step: number | undefined): string | null {
+  const EMPLOYER_STATUSES = new Set(['reviewing', 'active', 'rejected', 'completed']);
+
+  if (status !== undefined && !EMPLOYER_STATUSES.has(String(status))) {
+    return 'Работодатель может устанавливать только статусы: reviewing, active, rejected, completed';
+  }
+  if (step !== undefined) {
+    const value = Number(step);
+    if (!Number.isInteger(value) || value < 2 || value > 5) {
+      return 'Работодатель может устанавливать шаг от 2 до 5';
+    }
+  }
+  return null;
 }
 
 export default factories.createCoreController('api::application.application', ({ strapi }) => ({
@@ -272,9 +350,30 @@ export default factories.createCoreController('api::application.application', ({
       return ctx.notFound('Application not found');
     }
 
+    const raw = (ctx.request.body?.data ?? {}) as Record<string, unknown>;
+    const status = (raw.status ?? raw.applicationStatus) as string | undefined;
+    const step = (raw.step ?? raw.progressStep) as number | undefined;
+    const error = validateStatusUpdate(existing as AppDoc, user, userId, status, step);
+    if (error) {
+      return ctx.forbidden(error);
+    }
+
+    const input = toInternalData(raw);
+    delete input.statusLabel;
+    if (status !== undefined) {
+      input.statusLabel = statusLabelFor(String(status));
+    }
+    if (
+      input.progressStep !== undefined &&
+      input.progressStep !== (existing as AppDoc).progressStep &&
+      input.messages === undefined
+    ) {
+      input.messages = withStepMessage((existing as AppDoc).messages, Number(input.progressStep));
+    }
+
     const data = await strapi.documents('api::application.application').update({
       documentId,
-      data: toInternalData(ctx.request.body?.data ?? {}),
+      data: input,
     });
 
     return { data: toApiApplication(data as unknown as ApplicationDoc) };
@@ -294,8 +393,9 @@ export default factories.createCoreController('api::application.application', ({
     if (!existing || !canAccessApplication(existing as AppDoc, user, userId)) {
       return ctx.notFound('Application not found');
     }
-    if (accountRoleOf(user) === 'user' && status !== undefined && status !== 'cancelled' && status !== 'pending') {
-      return ctx.forbidden('Исполнитель может только отменить отклик');
+    const error = validateStatusUpdate(existing as AppDoc, user, userId, status, step);
+    if (error) {
+      return ctx.forbidden(error);
     }
 
     const patch: Record<string, unknown> = {};
@@ -305,6 +405,9 @@ export default factories.createCoreController('api::application.application', ({
     }
     if (step !== undefined) {
       patch.progressStep = step;
+      if (step !== (existing as AppDoc).progressStep) {
+        patch.messages = withStepMessage((existing as AppDoc).messages, step);
+      }
     }
     if (rejectionReason !== undefined) {
       patch.rejectionReason = rejectionReason;
