@@ -19,6 +19,12 @@ type AppDoc = {
   progressStep?: number;
 };
 
+/**
+ * Resolves the account role of an authenticated user, defaulting to 'user'
+ * when the role is missing or invalid.
+ * @param user - User loaded from the DB via the JWT's id (`ctx.state.user`)
+ * @returns The user's account role
+ */
 function accountRoleOf(user: AuthUser | undefined): 'user' | 'employer' | 'admin' {
   if (user?.accountRole === 'employer' || user?.accountRole === 'admin' || user?.accountRole === 'user') {
     return user.accountRole;
@@ -425,7 +431,8 @@ export default factories.createCoreController('api::application.application', ({
     const userId = requireAuthenticatedUser(ctx);
     const user = ctx.state.user as AuthUser;
     const documentId = ctx.params.id;
-    const { text, senderRole, senderName, id: clientMessageId } = ctx.request.body ?? {};
+    const { text, senderName, id: clientMessageId } = ctx.request.body ?? {};
+    const senderRole = accountRoleOf(user);
 
     if (!text || typeof text !== 'string' || !text.trim()) {
       return ctx.badRequest('text is required');
@@ -440,9 +447,9 @@ export default factories.createCoreController('api::application.application', ({
       return ctx.notFound('Application not found');
     }
 
-    const from = senderRole === 'admin' || senderRole === 'employer' ? 'employer' : 'user';
+    const from = (senderRole === 'admin' || senderRole === 'employer') ? 'employer' : 'user';
     const message: ChatMessageJson = {
-      id: typeof clientMessageId === 'string' && clientMessageId.startsWith('msg-') ? clientMessageId : `m-${Date.now()}`,
+      id: (typeof clientMessageId === 'string' && clientMessageId.startsWith('msg-')) ? clientMessageId : `m-${Date.now()}`,
       text: text.trim(),
       from,
       time: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
