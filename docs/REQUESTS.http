@@ -493,7 +493,9 @@ Content-Type: application/json
 
 ?? status == 200
 
-### ─── 15. Отправить сообщение на отклик ────────────────────────────
+### ─── 15. Исполнитель не может подменить senderRole в теле ──────────
+# Роль берётся из JWT (ctx.state.user), а не из запроса: подделанный
+# senderRole: "admin" не должен сделать сообщение сообщением работодателя.
 # @ref login
 # @ref createApplication
 POST {{api}}/applications/{{createApplication.data.documentId}}/messages
@@ -502,11 +504,50 @@ Content-Type: application/json
 
 {
     "text": "Тестовое сообщение по отклику",
-    "senderRole": "employer",
+    "senderRole": "admin",
     "senderName": "Илья"
 }
 
 ?? status == 200
+?? js response.parsedBody.data.from == user
+
+### ─── 15.1. Сообщение исполнителя сохранено как user ─────────────────
+# @ref login
+# @ref createApplication
+GET {{api}}/applications/{{createApplication.data.documentId}}
+Authorization: Bearer {{login.jwt}}
+
+?? status == 200
+?? js response.parsedBody.data.messages.find(m => m.text == 'Тестовое сообщение по отклику').from == user
+
+### ─── 15.2. Работодатель: роль из JWT, подмена на user игнорируется ──
+# @ref employerLogin
+# @ref createEmployerApplication
+POST {{api}}/applications/{{createEmployerApplication.data.documentId}}/messages
+Authorization: Bearer {{employerLogin.jwt}}
+Content-Type: application/json
+
+{
+    "text": "Сообщение работодателя",
+    "senderRole": "user"
+}
+
+?? status == 200
+?? js response.parsedBody.data.from == employer
+
+### ─── 15.3. Админ: сообщение уходит как от работодателя ──────────────
+# @ref adminLogin
+# @ref createApplication
+POST {{api}}/applications/{{createApplication.data.documentId}}/messages
+Authorization: Bearer {{adminLogin.jwt}}
+Content-Type: application/json
+
+{
+    "text": "Сообщение администратора"
+}
+
+?? status == 200
+?? js response.parsedBody.data.from == employer
 
 ### ─── 16. PUT /users/:id — whitelist полей, нельзя стать админом ───
 # Разрешены только displayName, phone, tgUsername, tgConnected, companyName.
