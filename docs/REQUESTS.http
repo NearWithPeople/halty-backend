@@ -592,3 +592,234 @@ Content-Type: application/json
 }
 
 ?? status == 404
+### ─── 18. PUT /api/vacancies/:id — только владелец, системные поля защищены ──
+# Update включён на core-роутере для authenticated, поэтому проверки живут в
+# контроллере: работодатель меняет только свою вакансию и только бизнес-поля.
+# moderationStatus/owner/createdByRole из тела игнорируются, модерация — только
+# через PATCH /vacancies/:id/moderation.
+
+### ─── 18.0. Второй работодатель (для проверки чужой вакансии) ────────
+# @name registerEmployer2
+POST {{api}}/auth/local/register
+Content-Type: application/json
+
+{
+  "username": "employer2",
+  "email": "employer2@halty.by",
+  "password": "Test1234!",
+  "accountRole": "employer",
+  "companyName": "Другая компания"
+}
+
+?? status == 200
+
+### ─── 18.1. Логин второго работодателя ──────────────────────────────
+# @name employer2Login
+POST {{api}}/auth/local
+Content-Type: application/json
+
+{
+  "identifier": "employer2@halty.by",
+  "password": "Test1234!"
+}
+
+?? status == 200
+
+### ─── 18.2. Работодатель создаёт вакансию для редактирования ────────
+# @name vacancyToEdit
+# @ref employerLogin
+POST {{api}}/vacancies
+Authorization: Bearer {{employerLogin.jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "title": "Вакансия до редактирования",
+    "company": "Минскзеленстрой",
+    "salary": "100 BYN / смена",
+    "category": "parks_green",
+    "categoryLabel": "Озеленение",
+    "attachmentType": "ground_zone",
+    "lat": 53.9,
+    "lng": 27.55,
+    "locationName": "Локация до редактирования",
+    "description": "Проверка прав на редактирование.",
+    "schedule": "Сегодня",
+    "payoutType": "Ежедневно"
+  }
+}
+
+?? status == 200
+?? js response.parsedBody.data.createdByRole == employer
+?? js response.parsedBody.data.moderationStatus == pending
+
+### ─── 18.3. Исполнитель не может редактировать вакансию ─────────────
+# @ref login
+# @ref vacancyToEdit
+PUT {{api}}/vacancies/{{vacancyToEdit.data.documentId}}
+Authorization: Bearer {{login.jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "title": "Взлом исполнителем"
+  }
+}
+
+?? status == 403
+?? js response.parsedBody.error.message == Смену может редактировать работодатель или админ
+
+### ─── 18.4. Другой работодатель не может редактировать чужую ────────
+# @ref employer2Login
+# @ref vacancyToEdit
+PUT {{api}}/vacancies/{{vacancyToEdit.data.documentId}}
+Authorization: Bearer {{employer2Login.jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "title": "Взлом другим работодателем"
+  }
+}
+
+?? status == 404
+?? js response.parsedBody.error.message == Vacancy not found
+
+### ─── 18.5. Владелец меняет бизнес-поля, системные поля игнорируются ──
+# @ref employerLogin
+# @ref employer2Login
+# @ref vacancyToEdit
+PUT {{api}}/vacancies/{{vacancyToEdit.data.documentId}}
+Authorization: Bearer {{employerLogin.jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "title": "Вакансия после редактирования",
+    "salary": "120 BYN / смена",
+    "locationName": "Новая локация",
+    "requirements": ["Опрятность"],
+    "moderationStatus": "published",
+    "createdByRole": "admin",
+    "owner": "{{employer2Login.user.id}}"
+  }
+}
+
+?? status == 200
+?? js response.parsedBody.data.title == Вакансия после редактирования
+?? js response.parsedBody.data.salary == 120 BYN / смена
+?? js response.parsedBody.data.locationName == Новая локация
+?? js response.parsedBody.data.moderationStatus == pending
+?? js response.parsedBody.data.createdByRole == employer
+?? js response.parsedBody.data.createdByUserId == {{employerLogin.user.id}}
+
+### ─── 18.6. owner не подменился: второй работодатель всё ещё чужой ───
+# @ref employer2Login
+# @ref vacancyToEdit
+PUT {{api}}/vacancies/{{vacancyToEdit.data.documentId}}
+Authorization: Bearer {{employer2Login.jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "title": "Повторный взлом"
+  }
+}
+
+?? status == 404
+
+### ─── 18.7. Владелец может редактировать свою вакансию повторно ──────
+# @ref employerLogin
+# @ref vacancyToEdit
+PUT {{api}}/vacancies/{{vacancyToEdit.data.documentId}}
+Authorization: Bearer {{employerLogin.jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "title": "Вакансия после второго редактирования"
+  }
+}
+
+?? status == 200
+
+### ─── 18.8. Изменения сохранены, moderationStatus остался pending ────
+# @ref vacancyToEdit
+GET {{api}}/vacancies/{{vacancyToEdit.data.documentId}}
+
+?? status == 200
+?? js response.parsedBody.data.title == Вакансия после второго редактирования
+?? js response.parsedBody.data.salary == 120 BYN / смена
+?? js response.parsedBody.data.moderationStatus == pending
+?? js response.parsedBody.data.createdByRole == employer
+
+### ─── 18.9. Работодатель не может модерировать через свой update ─────
+# @ref employerLogin
+# @ref vacancyToEdit
+PATCH {{api}}/vacancies/{{vacancyToEdit.data.documentId}}/moderation
+Authorization: Bearer {{employerLogin.jwt}}
+Content-Type: application/json
+
+{
+  "status": "published"
+}
+
+?? status == 403
+?? js response.parsedBody.error.message == Модерация доступна только админу
+
+### ─── 18.10. Исполнитель не может модерировать ──────────────────────
+# @ref login
+# @ref vacancyToEdit
+PATCH {{api}}/vacancies/{{vacancyToEdit.data.documentId}}/moderation
+Authorization: Bearer {{login.jwt}}
+Content-Type: application/json
+
+{
+  "status": "published"
+}
+
+?? status == 403
+
+### ─── 18.11. Админ публикует вакансию ───────────────────────────────
+# @ref adminLogin
+# @ref vacancyToEdit
+PATCH {{api}}/vacancies/{{vacancyToEdit.data.documentId}}/moderation
+Authorization: Bearer {{adminLogin.jwt}}
+Content-Type: application/json
+
+{
+  "status": "published"
+}
+
+?? status == 200
+?? js response.parsedBody.data.moderationStatus == published
+?? js response.parsedBody.data.createdByRole == employer
+
+### ─── 18.12. Админ может редактировать чужую вакансию ───────────────
+# @ref adminLogin
+# @ref vacancyToEdit
+PUT {{api}}/vacancies/{{vacancyToEdit.data.documentId}}
+Authorization: Bearer {{adminLogin.jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "title": "Вакансия после админа"
+  }
+}
+
+?? status == 200
+?? js response.parsedBody.data.title == Вакансия после админа
+
+### ─── 18.13. Без токена редактировать нельзя ────────────────────────
+# @ref vacancyToEdit
+PUT {{api}}/vacancies/{{vacancyToEdit.data.documentId}}
+Content-Type: application/json
+
+{
+  "data": {
+    "title": "Анонимный взлом"
+  }
+}
+
+?? status == 403
