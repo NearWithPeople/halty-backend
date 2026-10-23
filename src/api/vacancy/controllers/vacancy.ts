@@ -39,6 +39,44 @@ function presentVacancy(doc: Record<string, unknown> | null) {
   };
 }
 
+const EDITABLE_FIELDS = [
+  'title',
+  'company',
+  'salary',
+  'category',
+  'categoryLabel',
+  'attachmentType',
+  'lat',
+  'lng',
+  'address',
+  'locationName',
+  'description',
+  'requirements',
+  'schedule',
+  'payoutType',
+  'color',
+  'accentColor',
+  'iconType',
+  'buildingHeight',
+  'zoneRadius',
+] as const;
+
+/**
+ * Keep only employer-editable fields. System fields (`moderationStatus`,
+ * `owner`, `createdByRole`, timestamps, relations) are intentionally never
+ * copied from the request body.
+ */
+function pickEditableFields(body: Record<string, unknown>): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  for (const field of EDITABLE_FIELDS) {
+    if (field in body) payload[field] = body[field];
+  }
+  const coordinates = body.coordinates as { lat?: number; lng?: number } | undefined;
+  if (payload.lat === undefined && coordinates?.lat !== undefined) payload.lat = coordinates.lat;
+  if (payload.lng === undefined && coordinates?.lng !== undefined) payload.lng = coordinates.lng;
+  return payload;
+}
+
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 100;
@@ -120,6 +158,36 @@ export default factories.createCoreController('api::vacancy.vacancy', ({ strapi 
       populate: ['owner'],
     });
 
+    return { data: presentVacancy(data as Record<string, unknown>) };
+  },
+
+  async update(ctx) {
+    const userId = requireAuthenticatedUser(ctx);
+    const user = ctx.state.user as AccountUser;
+    const role = accountRole(user);
+    if (role === 'user') {
+      return ctx.forbidden('Смену может редактировать работодатель или админ');
+    }
+
+    const existing = await strapi.documents('api::vacancy.vacancy').findOne({
+      documentId: ctx.params.id,
+      populate: ['owner'],
+    });
+    if (!existing) return ctx.notFound('Vacancy not found');
+
+    const ownerId = (existing as { owner?: { id?: number } }).owner?.id;
+    if (role !== 'admin' && ownerId !== userId) {
+      return ctx.notFound('Vacancy not found');
+    }
+
+    const body = { ...(ctx.request.body?.data ?? ctx.request.body ?? {}) } as Record<string, unknown>;
+    const data = await strapi.documents('api::vacancy.vacancy').update({
+      documentId: ctx.params.id,
+      data: pickEditableFields(body) as never,
+      status: 'published',
+      populate: ['owner'],
+    });
+    if (!data) return ctx.notFound('Vacancy not found');
     return { data: presentVacancy(data as Record<string, unknown>) };
   },
 
