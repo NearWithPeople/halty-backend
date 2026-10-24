@@ -1,6 +1,7 @@
 import { factories } from '@strapi/strapi';
 import type { JSONValue } from '@strapi/types/dist/utils/json';
 import { requireAuthenticatedUser } from '../../../helpers/inject-owner';
+import { broadcast } from '../../../helpers/realtime';
 
 type AuthUser = {
   id?: number;
@@ -339,7 +340,9 @@ export default factories.createCoreController('api::application.application', ({
       populate: APP_POPULATE,
     });
 
-    return { data: toApiApplication(data as unknown as ApplicationDoc) };
+    const application = toApiApplication(data as unknown as ApplicationDoc);
+    broadcast('APPLICATION_CREATED', { data: application });
+    return { data: application };
   },
 
   async update(ctx) {
@@ -382,7 +385,9 @@ export default factories.createCoreController('api::application.application', ({
       data: input,
     });
 
-    return { data: toApiApplication(data as unknown as ApplicationDoc) };
+    const application = toApiApplication(data as unknown as ApplicationDoc);
+    broadcast('APPLICATION_UPDATED', { data: application });
+    return { data: application };
   },
 
   async updateStatus(ctx) {
@@ -424,7 +429,9 @@ export default factories.createCoreController('api::application.application', ({
       data: patch,
     });
 
-    return { data: toApiApplication(data as unknown as ApplicationDoc) };
+    const application = toApiApplication(data as unknown as ApplicationDoc);
+    broadcast('APPLICATION_UPDATED', { data: application });
+    return { data: application };
   },
 
   async addMessage(ctx) {
@@ -465,6 +472,8 @@ export default factories.createCoreController('api::application.application', ({
       },
     });
 
-    return { data: message, application: toApiApplication(data as unknown as ApplicationDoc) };
+    const application = toApiApplication(data as unknown as ApplicationDoc);
+    broadcast('MESSAGE_CREATED', { data: message, application });
+    return { data: message, application };
   },
 }));
