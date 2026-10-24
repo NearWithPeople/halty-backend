@@ -48,6 +48,93 @@ GET {{api}}/vacancies/nearby?lat=53.9045&lng=27.5615&radius=3000
 
 ?? status == 200
 
+### ─── 4.1. Список: фильтр по категории (filters[category][$eq]) ───
+# @name vacanciesByCategoryFilter
+GET {{api}}/vacancies?filters[category][$eq]=horeca&pagination[pageSize]=100
+
+?? status == 200
+?? js response.parsedBody.data.length >= 1
+?? js response.parsedBody.data.every(v => v.category == 'horeca') isTrue
+?? js response.parsedBody.meta.pagination.total == response.parsedBody.data.length isTrue
+
+### ─── 4.2. Список: короткий alias ?category= ──────────────────────
+GET {{api}}/vacancies?category=parks_green&pagination[pageSize]=100
+
+?? status == 200
+?? js response.parsedBody.data.length >= 1
+?? js response.parsedBody.data.every(v => v.category == 'parks_green') isTrue
+
+### ─── 4.3. Список: поиск через ?search= ───────────────────────────
+GET {{api}}/vacancies?search=парк&pagination[pageSize]=100
+
+?? status == 200
+?? js response.parsedBody.data.length >= 1
+?? js response.parsedBody.data.every(v => [v.title, v.company, v.locationName].join(' ').toLowerCase().includes('парк')) isTrue
+
+### ─── 4.4. Список: пагинация, первая страница ─────────────────────
+# @name vacanciesPagedFirst
+GET {{api}}/vacancies?pagination[page]=1&pagination[pageSize]=1
+
+?? status == 200
+?? js response.parsedBody.data.length == 1
+?? js response.parsedBody.meta.pagination.page == 1
+?? js response.parsedBody.meta.pagination.pageSize == 1
+?? js response.parsedBody.meta.pagination.pageCount == response.parsedBody.meta.pagination.total isTrue
+
+### ─── 4.5. Список: пагинация, вторая страница ─────────────────────
+GET {{api}}/vacancies?pagination[page]=2&pagination[pageSize]=1
+
+?? status == 200
+?? js response.parsedBody.data.length == 1
+?? js response.parsedBody.meta.pagination.page == 2
+?? js response.parsedBody.meta.pagination.pageSize == 1
+
+### ─── 4.6. Список: пагинация через alias ?limit= ──────────────────
+GET {{api}}/vacancies?limit=1&start=1
+
+?? status == 200
+?? js response.parsedBody.data.length == 1
+?? js response.parsedBody.meta.pagination.pageSize == 1
+
+### ─── 4.7. Список: нецелая страница отклоняется ───────────────────
+GET {{api}}/vacancies?pagination[page]=2.5
+
+?? status == 400
+?? js response.parsedBody.error.message contains pagination[page]
+
+### ─── 4.8. Список: нулевая страница отклоняется ───────────────────
+GET {{api}}/vacancies?pagination[page]=0
+
+?? status == 400
+?? js response.parsedBody.error.message contains pagination[page]
+
+### ─── 4.9. Список: нулевой pageSize отклоняется ───────────────────
+GET {{api}}/vacancies?pagination[pageSize]=0
+
+?? status == 400
+?? js response.parsedBody.error.message contains pagination[pageSize]
+
+### ─── 4.10. Список: отрицательный start отклоняется ────────────────
+GET {{api}}/vacancies?pagination[start]=-1
+
+?? status == 400
+?? js response.parsedBody.error.message contains pagination[start]
+
+### ─── 4.11. Nearby: фильтр по категории ────────────────────────────
+# @name nearbyByCategory
+GET {{api}}/vacancies/nearby?lat=53.9045&lng=27.5615&radius=5000&category=horeca
+
+?? status == 200
+?? js response.parsedBody.data.length >= 1
+?? js response.parsedBody.data.every(v => v.category == 'horeca') isTrue
+
+### ─── 4.12. Nearby: категория через filters[category][$eq] ─────────
+GET {{api}}/vacancies/nearby?lat=53.9045&lng=27.5615&radius=5000&filters[category][$eq]=parks_green
+
+?? status == 200
+?? js response.parsedBody.data.length >= 1
+?? js response.parsedBody.data.every(v => v.category == 'parks_green') isTrue
+
 ### ─── 5. Одна вакансия (documentId берём из списка выше) ──────────
 # @ref vacancies
 GET {{api}}/vacancies/{{vacancies.data[0].documentId}}?populate=*

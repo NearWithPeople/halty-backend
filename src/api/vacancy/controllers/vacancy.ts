@@ -79,32 +79,198 @@ function pickEditableFields(body: Record<string, unknown>): Record<string, unkno
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 25;
+const DEFAULT_FIND_PAGE_SIZE = 100;
 const MAX_PAGE_SIZE = 100;
+
+/**
+ * Normalize a query value to a non-empty string.
+ *
+ * Handles repeated query params (`?foo=a&foo=b`) by returning the first
+ * non-empty value, and treats blank values as absent.
+ *
+ * @param value - Raw query value (string, array, or anything else).
+ * @returns The trimmed string, or `undefined` when no usable value exists.
+ */
+function readString(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed || undefined;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const trimmed = readString(item);
+      if (trimmed) return trimmed;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Extract the category filter from either the plain `category` param or the
+ * Strapi-style `filters[category][$eq]` / `filters[category][$in]` params.
+ *
+ * @param query - Parsed request query.
+ * @returns The requested category, or `undefined` when not provided.
+ */
+function readCategory(query: Record<string, unknown>): string | undefined {
+  const filters = query.filters as Record<string, unknown> | undefined;
+  const raw = query.category ?? filters?.category;
+  const direct = readString(raw);
+  if (direct) return direct;
+  if (raw && typeof raw === 'object') {
+    const operator = raw as Record<string, unknown>;
+    return readString(operator.$eq) ?? readString(operator.$in);
+  }
+  return undefined;
+}
+
+/**
+ * Extract the text search term from `search`, `q`, or Strapi's native `_q`.
+ *
+ * @param query - Parsed request query.
+ * @returns The trimmed search term, or `undefined` when not provided.
+ */
+function readSearch(query: Record<string, unknown>): string | undefined {
+  return readString(query.search) ?? readString(query.q) ?? readString(query._q);
+}
+
+/**
+ * Parse and validate pagination params.
+ *
+ * Accepts `pagination[page]`, `pagination[pageSize]`, `pagination[start]` and
+ * their shorthand aliases `limit` / `start`. `page` and `pageSize` must be
+ * positive integers, `start` must be a non-negative integer, and `pageSize` is
+ * capped at `MAX_PAGE_SIZE`.
+ *
+ * @param query - Parsed request query.
+ * @param defaultPageSize - Page size used when the client omits it.
+ * @returns Parsed pagination, or `{ error }` describing invalid params.
+ */
+function readPagination(query: Record<string, unknown>, defaultPageSize: number): { page: number; pageSize: number; start: number } | { error: string } {
+  const pagination = (query.pagination ?? {}) as Record<string, unknown>;
+  const invalid: string[] = [];
+
+  const toInteger = (value: unknown, name: string, fallback: number, min: number) => {
+    if (value === undefined || value === '') return fallback;
+    const parsed = typeof value === 'string' ? Number(value) : Number.NaN;
+    if (!Number.isInteger(parsed) || parsed < min) {
+      invalid.push(`${name} >= ${min}`);
+      return fallback;
+    }
+    return parsed;
+  };
+
+  const page = toInteger(pagination.page, 'pagination[page]', DEFAULT_PAGE, 1);
+  const requestedPageSize = toInteger(
+    pagination.pageSize ?? query.limit,
+    'pagination[pageSize] (или limit)',
+    defaultPageSize,
+    1
+  );
+  const pageSize = Math.min(requestedPageSize, MAX_PAGE_SIZE);
+  const start = toInteger(
+    pagination.start ?? query.start,
+    'pagination[start] (или start)',
+    (page - 1) * pageSize,
+    0
+  );
+
+  if (invalid.length > 0) {
+    return { error: `Некорректные параметры: ${invalid.join(', ')}` };
+  }
+
+  return { page, pageSize, start };
+}
+
+/**
+ * Merge multiple filter objects into one Strapi filter.
+ *
+ * Empty filters are dropped; a single remaining filter is returned as-is, and
+ * several are combined with `$and` so conditions cannot overwrite each other.
+ *
+ * @param candidates - Filters to merge; `undefined` and `{}` are ignored.
+ * @returns A single Strapi filter object.
+ */
+function combineFilters(...candidates: (Record<string, unknown> | undefined)[]) {
+  const filters = candidates.filter(
+    (candidate): candidate is Record<string, unknown> =>
+      candidate !== undefined && Object.keys(candidate).length > 0
+  );
+  if (filters.length === 0) return {};
+  if (filters.length === 1) return filters[0];
+  return { $and: filters };
+}
+
+/**
+ * creates in find visibility filter based on role
+ * @param role 
+ * @param userId if underfined, returns filter for public user
+ * @returns filter
+ */
+function createVisibilityFilters(role: string, userId: undefined | number): Record<string, unknown> {
+  if (role === 'admin') {
+    return {};
+  }
+
+  if (!userId || role !== 'employer') {  
+    return { moderationStatus: { $eq: 'published' } };
+  }
+
+  return { $or: [
+      { moderationStatus: { $eq: 'published' } },
+      { owner: { id: { $eq: userId } } },
+    ], };
+  
+}
 
 export default factories.createCoreController('api::vacancy.vacancy', ({ strapi }) => ({
   async find(ctx) {
+    const query = ctx.query as Record<string, unknown>;
     const user = ctx.state.user as AccountUser | undefined;
     const role = accountRole(user);
-    const filters: Record<string, unknown> =
-      role === 'admin'
-        ? {}
-        : role === 'employer' && user?.id
-          ? {
-              $or: [
-                { moderationStatus: { $eq: 'published' } },
-                { owner: { id: { $eq: user.id } } },
-              ],
-            }
-          : { moderationStatus: { $eq: 'published' } };
+    const visibilityFilters: Record<string, unknown> = createVisibilityFilters(role, user?.id);
 
-    const data = await strapi.documents('api::vacancy.vacancy').findMany({
-      status: 'published',
-      filters,
-      populate: ['owner'],
-      limit: 100,
-    });
+    const category = readCategory(query);
+    const searchTerm = readSearch(query);
+    const pagination = readPagination(query, DEFAULT_FIND_PAGE_SIZE);
+    if ('error' in pagination) return ctx.badRequest(pagination.error);
+    const { page, pageSize, start } = pagination;
 
-    return { data: (data as Record<string, unknown>[]).map((item) => presentVacancy(item)) };
+    const filters = combineFilters(visibilityFilters,
+      category ? { category: { $eq: category } } : undefined,
+      searchTerm
+        ? {
+            $or: [
+              { title: { $containsi: searchTerm } },
+              { company: { $containsi: searchTerm } },
+              { locationName: { $containsi: searchTerm } },
+            ],
+          }
+        : undefined
+    );
+
+    const [data, total] = await Promise.all([
+      strapi.documents('api::vacancy.vacancy').findMany({
+        status: 'published',
+        filters,
+        populate: ['owner'],
+        limit: pageSize,
+        start,
+      }),
+      strapi.documents('api::vacancy.vacancy').count({ status: 'published', filters }),
+    ]);
+
+    return {
+      data: (data as Record<string, unknown>[]).map((item) => presentVacancy(item)),
+      meta: {
+        pagination: {
+          page,
+          pageSize,
+          pageCount: Math.ceil(total / pageSize) || 0,
+          total,
+        },
+      },
+    };
   },
 
   async findOne(ctx) {
@@ -246,9 +412,11 @@ export default factories.createCoreController('api::vacancy.vacancy', ({ strapi 
    * @example GET /api/vacancies/nearby?lat=53.9045&lng=27.5615&radius=3000
    */
   async nearby(ctx) {
-    const lat = Number(ctx.query.lat);
-    const lng = Number(ctx.query.lng);
-    const radius = Number(ctx.query.radius) || 3000;
+    const query = ctx.query as Record<string, unknown>;
+    const lat = Number(query.lat);
+    const lng = Number(query.lng);
+    const radius = Number(query.radius) || 3000;
+    const category = readCategory(query);
 
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
       return ctx.badRequest('lat and lng query params are required');
@@ -256,7 +424,10 @@ export default factories.createCoreController('api::vacancy.vacancy', ({ strapi 
 
     const vacancies = await strapi.documents('api::vacancy.vacancy').findMany({
       status: 'published',
-      filters: { moderationStatus: { $eq: 'published' } },
+      filters: combineFilters(
+        { moderationStatus: { $eq: 'published' } },
+        category ? { category: { $eq: category } } : undefined
+      ),
       populate: ['owner'],
     });
 
