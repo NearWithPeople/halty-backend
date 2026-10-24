@@ -1,6 +1,7 @@
 import { factories } from '@strapi/strapi';
 import { haversineDistanceMeters } from '../../../helpers/geo';
 import { requireAuthenticatedUser } from '../../../helpers/inject-owner';
+import { broadcast } from '../../../helpers/realtime';
 
 type AccountUser = {
   id?: number;
@@ -324,7 +325,9 @@ export default factories.createCoreController('api::vacancy.vacancy', ({ strapi 
       populate: ['owner'],
     });
 
-    return { data: presentVacancy(data as Record<string, unknown>) };
+    const vacancy = presentVacancy(data as Record<string, unknown>);
+    broadcast('VACANCY_CREATED', { data: vacancy });
+    return { data: vacancy };
   },
 
   async update(ctx) {
@@ -354,7 +357,9 @@ export default factories.createCoreController('api::vacancy.vacancy', ({ strapi 
       populate: ['owner'],
     });
     if (!data) return ctx.notFound('Vacancy not found');
-    return { data: presentVacancy(data as Record<string, unknown>) };
+    const vacancy = presentVacancy(data as Record<string, unknown>);
+    broadcast('VACANCY_UPDATED', { data: vacancy });
+    return { data: vacancy };
   },
 
   async delete(ctx) {
@@ -372,6 +377,7 @@ export default factories.createCoreController('api::vacancy.vacancy', ({ strapi 
     }
 
     const data = await strapi.documents('api::vacancy.vacancy').delete({ documentId });
+    broadcast('VACANCY_DELETED', { documentId });
     return { data };
   },
 
@@ -404,7 +410,9 @@ export default factories.createCoreController('api::vacancy.vacancy', ({ strapi 
       populate: ['owner'],
     });
     if (!data) return ctx.notFound('Vacancy not found');
-    return { data: presentVacancy(data as Record<string, unknown>) };
+    const vacancy = presentVacancy(data as Record<string, unknown>);
+    broadcast('VACANCY_UPDATED', { data: vacancy });
+    return { data: vacancy };
   },
 
   /**
