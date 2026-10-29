@@ -1,0 +1,16 @@
+{
+  "collectionName": "components_favorite_favorite_items",
+  "info": {
+    "displayName": "Favorite item",
+    "icon": "book"
+  },
+  "options": {},
+  "attributes": {
+    "vacancy": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::vacancy.vacancy"
+    }
+  },
+  "config": {}
+}

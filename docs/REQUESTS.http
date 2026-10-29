@@ -910,3 +910,178 @@ Content-Type: application/json
 }
 
 ?? status == 403
+
+### ─── 19. Favorites: массив у пользователя (owner-only) ─────────────
+# Favorites лежат на /users/me → доступны только владельцу.
+# Список / добавить / дубликат / удалить + негативные и security-кейсы.
+
+### ─── 19.1. Пустой список избранного ────────────────────────────────
+# @name favoritesEmpty
+# @ref login
+GET {{api}}/users/me/favorites
+Authorization: Bearer {{login.jwt}}
+
+?? status == 200
+?? js response.parsedBody.data.length == 0
+
+### ─── 19.2. Добавить вакансию в избранное ───────────────────────────
+# @name addFavorite
+# @ref login
+# @ref vacancies
+POST {{api}}/users/me/favorites
+Authorization: Bearer {{login.jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "vacancy": "{{vacancies.data[0].documentId}}"
+  }
+}
+
+?? status == 200
+?? js response.parsedBody.data.documentId == {{vacancies.data[0].documentId}}
+
+### ─── 19.3. Дубликат в избранном → 409 ──────────────────────────────
+# @ref login
+# @ref vacancies
+POST {{api}}/users/me/favorites
+Authorization: Bearer {{login.jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "vacancy": "{{vacancies.data[0].documentId}}"
+  }
+}
+
+?? status == 409
+?? js response.parsedBody.error.message == Vacancy is already in favorites
+
+### ─── 19.4. Список содержит добавленную вакансию ─────────────────────
+# @ref login
+# @ref vacancies
+GET {{api}}/users/me/favorites
+Authorization: Bearer {{login.jwt}}
+
+?? status == 200
+?? js response.parsedBody.data.length == 1
+?? js response.parsedBody.data[0].documentId == {{vacancies.data[0].documentId}}
+
+### ─── 19.5. Добавить без вакансии → 400 ─────────────────────────────
+# @ref login
+POST {{api}}/users/me/favorites
+Authorization: Bearer {{login.jwt}}
+Content-Type: application/json
+
+{
+  "data": {}
+}
+
+?? status == 400
+?? js response.parsedBody.error.message == vacancy is required
+
+### ─── 19.6. Добавить несуществующую вакансию → 404 ──────────────────
+# @ref login
+POST {{api}}/users/me/favorites
+Authorization: Bearer {{login.jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "vacancy": "does-not-exist"
+  }
+}
+
+?? status == 404
+
+### ─── 19.7. Второй пользователь (для проверки изоляции) ─────────────
+# @name registerFavoriteUser2
+POST {{api}}/auth/local/register
+Content-Type: application/json
+
+{
+  "username": "favuser2",
+  "email": "favuser2@halty.by",
+  "password": "Test1234!",
+  "accountRole": "user"
+}
+
+?? status == 200
+
+### ─── 19.8. Логин второго пользователя ──────────────────────────────
+# @name favoriteUser2Login
+POST {{api}}/auth/local
+Content-Type: application/json
+
+{
+  "identifier": "favuser2@halty.by",
+  "password": "Test1234!"
+}
+
+?? status == 200
+
+### ─── 19.9. Второй пользователь не видит чужие избранные ─────────────
+# @ref favoriteUser2Login
+GET {{api}}/users/me/favorites
+Authorization: Bearer {{favoriteUser2Login.jwt}}
+
+?? status == 200
+?? js response.parsedBody.data.length == 0
+
+### ─── 19.10. У первого избранное на месте ────────────────────────────
+# @ref login
+# @ref vacancies
+GET {{api}}/users/me/favorites
+Authorization: Bearer {{login.jwt}}
+
+?? status == 200
+?? js response.parsedBody.data.length == 1
+?? js response.parsedBody.data[0].documentId == {{vacancies.data[0].documentId}}
+
+### ─── 19.10.2 Удалить не своё → 404 ──────────────────────────────────
+# Второй пользователь пытается удалить вакансию, которой нет в ЕГО избранном.
+# Эндпоинт /users/me работает только со своим списком, поэтому удалить чужое
+# нельзя: для второго пользователя это просто «не найдено».
+# @ref favoriteUser2Login
+# @ref vacancies
+DELETE {{api}}/users/me/favorites/{{vacancies.data[0].documentId}}
+Authorization: Bearer {{favoriteUser2Login.jwt}}
+
+?? status == 404
+
+### ─── 19.11. Удалить из избранного ───────────────────────────────────
+# @ref login
+# @ref vacancies
+DELETE {{api}}/users/me/favorites/{{vacancies.data[0].documentId}}
+Authorization: Bearer {{login.jwt}}
+
+?? status == 200
+?? js response.parsedBody.data.documentId == {{vacancies.data[0].documentId}}
+?? js response.parsedBody.data.removed == true
+
+### ─── 19.12. Удалить повторно → 404 ──────────────────────────────────
+# @ref login
+# @ref vacancies
+DELETE {{api}}/users/me/favorites/{{vacancies.data[0].documentId}}
+Authorization: Bearer {{login.jwt}}
+
+?? status == 404
+
+### ─── 19.13. Без токена читать нельзя ────────────────────────────────
+GET {{api}}/users/me/favorites
+
+?? status == 403
+
+### ─── 19.14. Без токена добавлять нельзя ─────────────────────────────
+# @ref vacancies
+POST {{api}}/users/me/favorites
+Content-Type: application/json
+
+{
+  "data": {
+    "vacancy": "{{vacancies.data[0].documentId}}"
+  }
+}
+
+?? status == 403
+
