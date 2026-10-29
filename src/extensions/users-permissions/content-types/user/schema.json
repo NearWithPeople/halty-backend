@@ -11,6 +11,7 @@
   "options": {
     "draftAndPublish": false
   },
+  "pluginOptions": {},
   "attributes": {
     "username": {
       "type": "string",
@@ -76,8 +77,12 @@
     },
     "accountRole": {
       "type": "enumeration",
-      "enum": ["user", "employer", "admin"],
-      "default": "user"
+      "default": "user",
+      "enum": [
+        "user",
+        "employer",
+        "admin"
+      ]
     },
     "tgUsername": {
       "type": "string"
@@ -85,6 +90,11 @@
     "tgConnected": {
       "type": "boolean",
       "default": false
+    },
+    "favorites": {
+      "type": "component",
+      "component": "favorite.favorite-item",
+      "repeatable": true
     }
   }
 }

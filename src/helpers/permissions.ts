@@ -10,7 +10,7 @@ const PERMISSIONS: Record<RoleType, Record<string, string[]>> = {
   authenticated: {
     'api::vacancy.vacancy': ['find', 'findOne', 'nearby', 'search', 'create', 'update', 'delete', 'moderate'],
     'api::application.application': ['find', 'findOne', 'create', 'update', 'updateStatus', 'addMessage'],
-    'plugin::users-permissions.user': ['me', 'update'],
+    'plugin::users-permissions.user': ['me', 'update', 'listFavorites', 'addFavorite', 'removeFavorite'],
     'plugin::users-permissions.auth': ['connect', 'callback', 'changePassword'],
   },
 };
