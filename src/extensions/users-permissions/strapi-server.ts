@@ -1,5 +1,5 @@
-import { withProfileUpdateWhitelist } from './controllers/user';
-import type { UserUpdateCtx } from './controllers/user';
+import { withComputedStats, withProfileUpdateWhitelist } from './controllers/user';
+import type { UserMeCtx, UserUpdateCtx } from './controllers/user';
 import { addFavorite, listFavorites, removeFavorite } from './controllers/favorites';
 import type { FavoritesCtx } from './controllers/favorites';
 
@@ -14,6 +14,7 @@ type AuthController = {
 
 type UserController = {
   update: (ctx: UserUpdateCtx) => Promise<unknown> | unknown;
+  me: (ctx: UserMeCtx) => Promise<unknown> | unknown;
   listFavorites: (ctx: FavoritesCtx) => Promise<unknown> | unknown;
   addFavorite: (ctx: FavoritesCtx) => Promise<unknown> | unknown;
   removeFavorite: (ctx: FavoritesCtx) => Promise<unknown> | unknown;
@@ -86,8 +87,10 @@ export default (plugin: UsersPermissionsPlugin) => {
 
   const userController = plugin.controllers.user;
   const update = userController.update.bind(userController);
+  const me = userController.me.bind(userController);
 
   userController.update = withProfileUpdateWhitelist(update);
+  userController.me = withComputedStats(me);
 
   userController.listFavorites = listFavorites;
   userController.addFavorite = addFavorite;

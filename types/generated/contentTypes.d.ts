@@ -467,6 +467,8 @@ export interface ApiApplicationApplication extends Struct.CollectionTypeSchema {
       Schema.Attribute.Private;
     description: Schema.Attribute.Text;
     duration: Schema.Attribute.String;
+    EmployeeDelaySec: Schema.Attribute.BigInteger;
+    JobRating: Schema.Attribute.Decimal;
     lat: Schema.Attribute.Decimal;
     lng: Schema.Attribute.Decimal;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
@@ -476,7 +478,7 @@ export interface ApiApplicationApplication extends Struct.CollectionTypeSchema {
     > &
       Schema.Attribute.Private;
     location: Schema.Attribute.String;
-    messages: Schema.Attribute.JSON & Schema.Attribute.DefaultTo<[]>;
+    messages: Schema.Attribute.JSON;
     owner: Schema.Attribute.Relation<
       'manyToOne',
       'plugin::users-permissions.user'
@@ -484,7 +486,7 @@ export interface ApiApplicationApplication extends Struct.CollectionTypeSchema {
     progressStep: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<1>;
     publishedAt: Schema.Attribute.DateTime;
     rejectionReason: Schema.Attribute.String;
-    requirementsNotes: Schema.Attribute.JSON & Schema.Attribute.DefaultTo<[]>;
+    requirementsNotes: Schema.Attribute.JSON;
     role: Schema.Attribute.String &
       Schema.Attribute.DefaultTo<'\u0421\u043C\u0435\u043D\u0430'>;
     salary: Schema.Attribute.String;

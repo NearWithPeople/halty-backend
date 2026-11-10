@@ -1085,3 +1085,132 @@ Content-Type: application/json
 
 ?? status == 403
 
+### ─── 20. Оценка смены и computed-статистика пользователя ──────────
+# Работодатель (владелец вакансии) выставляет JobRating/EmployeeDelaySec.
+# Пользователь получает computed-поля rating / completedShifts / punctuality /
+# averageDelaySec в /users/me и в application.owner.
+
+### ─── 20.1. Работодатель оценивает завершённую смену ────────────────
+# @ref employerLogin
+# @ref createEmployerApplication
+PUT {{api}}/applications/{{createEmployerApplication.data.documentId}}
+Authorization: Bearer {{employerLogin.jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "jobRating": 5,
+    "employeeDelaySec": 1800
+  }
+}
+
+?? status == 200
+?? js response.parsedBody.data.jobRating == 5
+?? js response.parsedBody.data.employeeDelaySec == 1800
+?? js response.parsedBody.data.owner.rating == 5
+?? js response.parsedBody.data.owner.completedShifts == 1
+?? js response.parsedBody.data.owner.punctuality == 50
+?? js response.parsedBody.data.owner.averageDelaySec == 1800
+
+### ─── 20.2. Исполнитель не может оценить сам себя → 403 ─────────────
+# @ref login
+# @ref createEmployerApplication
+PUT {{api}}/applications/{{createEmployerApplication.data.documentId}}
+Authorization: Bearer {{login.jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "jobRating": 1
+  }
+}
+
+?? status == 403
+?? js response.parsedBody.error.message == Оценивать смену может только работодатель
+
+### ─── 20.3. Чужой работодатель не может оценить смену → 403 ─────────
+# Компания совпадает (доступ к отклику есть), но вакансия принадлежит админу.
+# @ref employerLogin
+# @ref createApplication
+PUT {{api}}/applications/{{createApplication.data.documentId}}
+Authorization: Bearer {{employerLogin.jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "jobRating": 4
+  }
+}
+
+?? status == 403
+?? js response.parsedBody.error.message == Оценивать смену может только работодатель этой вакансии
+
+### ─── 20.4. /users/me отдаёт computed-статистику ─────────────────────
+# @ref login
+GET {{api}}/users/me
+Authorization: Bearer {{login.jwt}}
+
+?? status == 200
+?? js response.parsedBody.rating == 5
+?? js response.parsedBody.completedShifts == 1
+?? js response.parsedBody.punctuality == 50
+?? js response.parsedBody.averageDelaySec == 1800
+
+### ─── 20.5. Некорректная оценка отклоняется → 400 ───────────────────
+# @ref employerLogin
+# @ref createEmployerApplication
+PUT {{api}}/applications/{{createEmployerApplication.data.documentId}}
+Authorization: Bearer {{employerLogin.jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "jobRating": 6
+  }
+}
+
+?? status == 400
+?? js response.parsedBody.error.message == Оценка должна быть числом от 1 до 5
+
+### ─── 20.6. Отрицательная задержка отклоняется → 400 ────────────────
+# @ref employerLogin
+# @ref createEmployerApplication
+PUT {{api}}/applications/{{createEmployerApplication.data.documentId}}
+Authorization: Bearer {{employerLogin.jwt}}
+Content-Type: application/json
+
+{
+  "data": {
+    "employeeDelaySec": -1
+  }
+}
+
+?? status == 400
+?? js response.parsedBody.error.message == Задержка должна быть неотрицательным числом секунд
+
+### ─── 20.7. Задержка ≥ 1 часа даёт punctuality 0% ───────────────────
+# @ref employerLogin
+# @ref createEmployerApplication
+PATCH {{api}}/applications/{{createEmployerApplication.data.documentId}}/status
+Authorization: Bearer {{employerLogin.jwt}}
+Content-Type: application/json
+
+{
+  "employeeDelaySec": 3600
+}
+
+?? status == 200
+?? js response.parsedBody.data.employeeDelaySec == 3600
+?? js response.parsedBody.data.owner.punctuality == 0
+
+### ─── 20.8. Изменения задержки отражены в /users/me ──────────────────
+# @ref login
+GET {{api}}/users/me
+Authorization: Bearer {{login.jwt}}
+
+?? status == 200
+?? js response.parsedBody.rating == 5
+?? js response.parsedBody.completedShifts == 1
+?? js response.parsedBody.punctuality == 0
+?? js response.parsedBody.averageDelaySec == 3600
+

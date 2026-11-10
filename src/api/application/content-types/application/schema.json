@@ -77,15 +77,19 @@
       "type": "string"
     },
     "requirementsNotes": {
-      "type": "json",
-      "default": []
+      "type": "json"
     },
     "vacancyDocumentId": {
       "type": "string"
     },
     "messages": {
-      "type": "json",
-      "default": []
+      "type": "json"
+    },
+    "JobRating": {
+      "type": "decimal"
+    },
+    "EmployeeDelaySec": {
+      "type": "biginteger"
     }
   }
 }

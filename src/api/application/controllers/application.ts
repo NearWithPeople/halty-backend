@@ -2,6 +2,10 @@ import { factories } from '@strapi/strapi';
 import type { JSONValue } from '@strapi/types/dist/utils/json';
 import { requireAuthenticatedUser } from '../../../helpers/inject-owner';
 import { broadcast } from '../../../helpers/realtime';
+import { can } from '../../../helpers/policy';
+import type { PolicyContext } from '../../../helpers/policy';
+import { getUserStats, getUserStatsByOwner } from '../../../helpers/user-stats';
+import type { UserComputedStats } from '../../../helpers/user-stats';
 
 type AuthUser = {
   id?: number;
@@ -18,6 +22,8 @@ type AppDoc = {
   messages?: unknown[];
   applicationStatus?: string;
   progressStep?: number;
+  JobRating?: unknown;
+  EmployeeDelaySec?: unknown;
 };
 
 /**
@@ -33,15 +39,13 @@ function accountRoleOf(user: AuthUser | undefined): 'user' | 'employer' | 'admin
   return 'user';
 }
 
-function canAccessApplication(app: AppDoc, user: AuthUser, userId: number): boolean {
-  if (accountRoleOf(user) === 'admin') return true;
-  if (app.owner?.id === userId) return true;
-  if (accountRoleOf(user) !== 'employer') return false;
+function policyContextFor(app: AppDoc): PolicyContext {
   const vacancy = app.vacancy;
-  const vacancyOwnerId = vacancy && typeof vacancy === 'object' ? vacancy.owner?.id : undefined;
-  if (vacancyOwnerId === userId) return true;
-  const company = user.companyName?.trim().toLowerCase();
-  return Boolean(company && app.company && app.company.toLowerCase() === company);
+  return {
+    ownerId: app.owner?.id,
+    vacancyOwnerId: vacancy && typeof vacancy === 'object' ? vacancy.owner?.id : undefined,
+    company: app.company,
+  };
 }
 
 const APP_POPULATE = {
@@ -104,14 +108,26 @@ type ApplicationDoc = Record<string, unknown>;
  * frontend. Renames internal fields (`applicationStatus` → `status`,
  * `vacancyDocumentId` → `vacancyId`), flattens the vacancy relation into its
  * `documentId` and exposes the vacancy owner as `createdByUserId`. Sensitive
- * owner fields (`password`, reset/confirmation tokens) are stripped.
+ * owner fields (`password`, reset/confirmation tokens) are stripped, and the
+ * applicant's computed reputation stats are merged into `owner`.
  *
  * @param doc - Raw application document (with populated `owner`/`vacancy`), or `null`.
+ * @param ownerStats - Computed stats of the applicant, when already loaded.
  * @returns The sanitized application document, or `null` when `doc` is null.
  */
-function toApiApplication(doc: ApplicationDoc | null): ApplicationDoc | null {
+function toApiApplication(
+  doc: ApplicationDoc | null,
+  ownerStats?: UserComputedStats,
+): ApplicationDoc | null {
   if (!doc) return doc;
-  const { applicationStatus, vacancyDocumentId, vacancy, ...rest } = doc as ApplicationDoc & {
+  const {
+    applicationStatus,
+    vacancyDocumentId,
+    vacancy,
+    JobRating,
+    EmployeeDelaySec,
+    ...rest
+  } = doc as ApplicationDoc & {
     vacancy?: AppDoc['vacancy'];
   };
   const fromRelation =
@@ -128,12 +144,14 @@ function toApiApplication(doc: ApplicationDoc | null): ApplicationDoc | null {
           };
         })()
       : vacancy;
-  const owner = rest.owner as { password?: string; resetPasswordToken?: string; confirmationToken?: string } | undefined;
+  const owner = rest.owner as
+    | { password?: string; resetPasswordToken?: string; confirmationToken?: string }
+    | undefined;
   const safeOwner =
     owner && typeof owner === 'object'
       ? (() => {
           const { password: _password, resetPasswordToken: _reset, confirmationToken: _token, ...ownerRest } = owner;
-          return ownerRest;
+          return { ...ownerRest, ...(ownerStats ?? {}) };
         })()
       : owner;
   return {
@@ -142,11 +160,73 @@ function toApiApplication(doc: ApplicationDoc | null): ApplicationDoc | null {
     vacancy: safeVacancy,
     status: applicationStatus ?? 'pending',
     vacancyId: vacancyDocumentId ?? fromRelation,
+    jobRating: JobRating != null ? Number(JobRating) : null,
+    employeeDelaySec: EmployeeDelaySec != null ? Number(EmployeeDelaySec) : null,
   };
 }
 
-function toApiApplications(docs: ApplicationDoc[]): ApplicationDoc[] {
-  return docs.map((doc) => toApiApplication(doc) as ApplicationDoc);
+function ownerIdOf(doc: ApplicationDoc): number | undefined {
+  const owner = doc.owner as { id?: number } | undefined;
+  return typeof owner?.id === 'number' ? owner.id : undefined;
+}
+
+async function statsForApplication(
+  strapi: Parameters<typeof getUserStats>[0],
+  doc: ApplicationDoc | null,
+): Promise<UserComputedStats | undefined> {
+  const ownerId = doc ? ownerIdOf(doc) : undefined;
+  return ownerId !== undefined ? getUserStats(strapi, ownerId) : undefined;
+}
+
+function toApiApplications(docs: ApplicationDoc[], statsByOwner: Map<number, UserComputedStats>): ApplicationDoc[] {
+  return docs.map((doc) => {
+    const ownerId = ownerIdOf(doc);
+    return toApiApplication(doc, ownerId !== undefined ? statsByOwner.get(ownerId) : undefined) as ApplicationDoc;
+  });
+}
+
+const RATING_KEYS = ['jobRating', 'JobRating', 'rating'] as const;
+const DELAY_KEYS = ['employeeDelaySec', 'EmployeeDelaySec', 'delaySec', 'delay'] as const;
+
+function readFirst(data: ApplicationDoc, keys: readonly string[]): unknown {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(data, key)) return data[key];
+  }
+  return undefined;
+}
+
+type Parsed<T> = { value: T; error?: never } | { value?: never; error: string };
+
+/**
+ * Parse an optional job rating (1–5, decimals allowed) from any accepted alias.
+ */
+function parseJobRating(data: ApplicationDoc): Parsed<number | undefined> {
+  const raw = readFirst(data, RATING_KEYS);
+  if (raw === undefined || raw === null || raw === '') return { value: undefined };
+  const value = typeof raw === 'number' ? raw : Number(raw);
+  if (!Number.isFinite(value) || value < 1 || value > 5) {
+    return { error: 'Оценка должна быть числом от 1 до 5' };
+  }
+  return { value };
+}
+
+/**
+ * Parse an optional employee delay in seconds (non-negative) from any accepted alias.
+ */
+function parseEmployeeDelay(data: ApplicationDoc): Parsed<number | undefined> {
+  const raw = readFirst(data, DELAY_KEYS);
+  if (raw === undefined || raw === null || raw === '') return { value: undefined };
+  const value = typeof raw === 'number' ? raw : Number(raw);
+  if (!Number.isFinite(value) || value < 0) {
+    return { error: 'Задержка должна быть неотрицательным числом секунд' };
+  }
+  return { value: Math.round(value) };
+}
+
+function stripRatingFields(data: ApplicationDoc): ApplicationDoc {
+  const clean = { ...data };
+  for (const key of [...RATING_KEYS, ...DELAY_KEYS]) delete clean[key];
+  return clean;
 }
 
 function toInternalData(data: ApplicationDoc): ApplicationDoc {
@@ -157,22 +237,17 @@ function toInternalData(data: ApplicationDoc): ApplicationDoc {
   return internal;
 }
 
-function isVacancyOwner(app: AppDoc, userId: number): boolean {
-  const vacancy = app.vacancy;
-  return Boolean(vacancy && typeof vacancy === 'object' && vacancy.owner?.id === userId);
-}
-
 /**
  * Checks user privileges for updating application status/progress fields.
  * Executors may only set `cancelled`; employers may manage statuses and steps
- * only for their own vacancy; admins may set anything.
+ * only for their own vacancy; admins may set anything. Object-level access is
+ * decided by the central policy (`application:manage`).
  *
  * @returns An error message when the update is not allowed, otherwise null.
  */
 function validateStatusUpdate(
   app: AppDoc,
   user: AuthUser,
-  userId: number,
   status: string | undefined,
   step: number | undefined,
 ): string | null {
@@ -184,7 +259,7 @@ function validateStatusUpdate(
     return validateUserStatusUpdate(status, step);
   }
   if (role === 'employer') {
-    if (!isVacancyOwner(app, userId)) {
+    if (!can(user, 'application:manage', policyContextFor(app))) {
       return 'Менять статус может только работодатель этой вакансии';
     }
     return validateEmployerStatusUpdate(status, step);
@@ -200,6 +275,30 @@ function validateUserStatusUpdate(status: string | undefined, step: number | und
     return 'Исполнитель не может менять шаг отклика';
   }
   return null;
+}
+
+/**
+ * Checks privileges for setting the employer-provided reputation fields.
+ * Only the owner of the vacancy (or an admin) may rate the employee or report
+ * their delay; executors and unrelated employers are rejected.
+ *
+ * @returns An error message when the update is not allowed, otherwise null.
+ */
+function validateRatingUpdate(
+  app: AppDoc,
+  user: AuthUser,
+  jobRating: number | undefined,
+  employeeDelaySec: number | undefined,
+): string | null {
+  if (jobRating === undefined && employeeDelaySec === undefined) {
+    return null;
+  }
+  if (can(user, 'application:rate', policyContextFor(app))) {
+    return null;
+  }
+  return accountRoleOf(user) === 'employer'
+    ? 'Оценивать смену может только работодатель этой вакансии'
+    : 'Оценивать смену может только работодатель';
 }
 
 function validateEmployerStatusUpdate(status: string | undefined, step: number | undefined): string | null {
@@ -240,13 +339,18 @@ export default factories.createCoreController('api::application.application', ({
       populate: APP_POPULATE,
     });
 
-    const applications = toApiApplications(data as unknown as ApplicationDoc[]);
+    const docs = data as unknown as ApplicationDoc[];
+    const statsByOwner = await getUserStatsByOwner(
+      strapi,
+      docs.map(ownerIdOf).filter((id): id is number => id !== undefined),
+    );
+    const applications = toApiApplications(docs, statsByOwner);
 
     return { data: applications, meta: { pagination: { total: applications.length } } };
   },
 
   async findOne(ctx) {
-    const userId = requireAuthenticatedUser(ctx);
+    requireAuthenticatedUser(ctx);
     const user = ctx.state.user as AuthUser;
     const documentId = ctx.params.id;
 
@@ -255,17 +359,18 @@ export default factories.createCoreController('api::application.application', ({
       populate: APP_POPULATE,
     });
 
-    if (!data || !canAccessApplication(data as AppDoc, user, userId)) {
+    if (!data || !can(user, 'application:read', policyContextFor(data as AppDoc))) {
       return ctx.notFound('Application not found');
     }
 
-    return { data: toApiApplication(data as unknown as ApplicationDoc) };
+    const stats = await statsForApplication(strapi, data as unknown as ApplicationDoc);
+    return { data: toApiApplication(data as unknown as ApplicationDoc, stats) };
   },
 
   async create(ctx) {
     const userId = requireAuthenticatedUser(ctx);
     const user = ctx.state.user as AuthUser;
-    if (accountRoleOf(user) !== 'user') {
+    if (!can(user, 'application:create')) {
       return ctx.forbidden('Отклик может отправить исполнитель');
     }
     const body = { ...(ctx.request.body?.data ?? {}) };
@@ -340,13 +445,14 @@ export default factories.createCoreController('api::application.application', ({
       populate: APP_POPULATE,
     });
 
-    const application = toApiApplication(data as unknown as ApplicationDoc);
+    const stats = await statsForApplication(strapi, data as unknown as ApplicationDoc);
+    const application = toApiApplication(data as unknown as ApplicationDoc, stats);
     broadcast('APPLICATION_CREATED', { data: application });
     return { data: application };
   },
 
   async update(ctx) {
-    const userId = requireAuthenticatedUser(ctx);
+    requireAuthenticatedUser(ctx);
     const user = ctx.state.user as AuthUser;
     const documentId = ctx.params.id;
 
@@ -355,20 +461,30 @@ export default factories.createCoreController('api::application.application', ({
       populate: APP_POPULATE,
     });
 
-    if (!existing || !canAccessApplication(existing as AppDoc, user, userId)) {
+    if (!existing || !can(user, 'application:update', policyContextFor(existing as AppDoc))) {
       return ctx.notFound('Application not found');
     }
 
     const raw = (ctx.request.body?.data ?? {}) as Record<string, unknown>;
     const status = (raw.status ?? raw.applicationStatus) as string | undefined;
     const step = (raw.step ?? raw.progressStep) as number | undefined;
-    const error = validateStatusUpdate(existing as AppDoc, user, userId, status, step);
+
+    const rating = parseJobRating(raw);
+    if (rating.error) return ctx.badRequest(rating.error);
+    const delay = parseEmployeeDelay(raw);
+    if (delay.error) return ctx.badRequest(delay.error);
+
+    const error =
+      validateStatusUpdate(existing as AppDoc, user, status, step) ??
+      validateRatingUpdate(existing as AppDoc, user, rating.value, delay.value);
     if (error) {
       return ctx.forbidden(error);
     }
 
-    const input = toInternalData(raw);
+    const input = stripRatingFields(toInternalData(raw));
     delete input.statusLabel;
+    if (rating.value !== undefined) input.JobRating = rating.value;
+    if (delay.value !== undefined) input.EmployeeDelaySec = delay.value;
     if (status !== undefined) {
       input.statusLabel = statusLabelFor(String(status));
     }
@@ -383,28 +499,41 @@ export default factories.createCoreController('api::application.application', ({
     const data = await strapi.documents('api::application.application').update({
       documentId,
       data: input,
+      populate: APP_POPULATE,
     });
 
-    const application = toApiApplication(data as unknown as ApplicationDoc);
+    const stats = await statsForApplication(strapi, data as unknown as ApplicationDoc);
+    const application = toApiApplication(data as unknown as ApplicationDoc, stats);
     broadcast('APPLICATION_UPDATED', { data: application });
     return { data: application };
   },
 
   async updateStatus(ctx) {
-    const userId = requireAuthenticatedUser(ctx);
+    requireAuthenticatedUser(ctx);
     const user = ctx.state.user as AuthUser;
     const documentId = ctx.params.id;
-    const { status, step, rejectionReason } = ctx.request.body ?? {};
+    const body = (ctx.request.body ?? {}) as Record<string, unknown>;
+    const status = body.status as string | undefined;
+    const step = body.step as number | undefined;
+    const rejectionReason = body.rejectionReason;
 
     const existing = await strapi.documents('api::application.application').findOne({
       documentId,
       populate: APP_POPULATE,
     });
 
-    if (!existing || !canAccessApplication(existing as AppDoc, user, userId)) {
+    if (!existing || !can(user, 'application:update', policyContextFor(existing as AppDoc))) {
       return ctx.notFound('Application not found');
     }
-    const error = validateStatusUpdate(existing as AppDoc, user, userId, status, step);
+
+    const rating = parseJobRating(body);
+    if (rating.error) return ctx.badRequest(rating.error);
+    const delay = parseEmployeeDelay(body);
+    if (delay.error) return ctx.badRequest(delay.error);
+
+    const error =
+      validateStatusUpdate(existing as AppDoc, user, status, step) ??
+      validateRatingUpdate(existing as AppDoc, user, rating.value, delay.value);
     if (error) {
       return ctx.forbidden(error);
     }
@@ -423,19 +552,27 @@ export default factories.createCoreController('api::application.application', ({
     if (rejectionReason !== undefined) {
       patch.rejectionReason = rejectionReason;
     }
+    if (rating.value !== undefined) {
+      patch.JobRating = rating.value;
+    }
+    if (delay.value !== undefined) {
+      patch.EmployeeDelaySec = delay.value;
+    }
 
     const data = await strapi.documents('api::application.application').update({
       documentId,
       data: patch,
+      populate: APP_POPULATE,
     });
 
-    const application = toApiApplication(data as unknown as ApplicationDoc);
+    const stats = await statsForApplication(strapi, data as unknown as ApplicationDoc);
+    const application = toApiApplication(data as unknown as ApplicationDoc, stats);
     broadcast('APPLICATION_UPDATED', { data: application });
     return { data: application };
   },
 
   async addMessage(ctx) {
-    const userId = requireAuthenticatedUser(ctx);
+    requireAuthenticatedUser(ctx);
     const user = ctx.state.user as AuthUser;
     const documentId = ctx.params.id;
     const { text, senderName, id: clientMessageId } = ctx.request.body ?? {};
@@ -450,7 +587,7 @@ export default factories.createCoreController('api::application.application', ({
       populate: APP_POPULATE,
     });
 
-    if (!existing || !canAccessApplication(existing as AppDoc, user, userId)) {
+    if (!existing || !can(user, 'application:message', policyContextFor(existing as AppDoc))) {
       return ctx.notFound('Application not found');
     }
 
@@ -470,9 +607,11 @@ export default factories.createCoreController('api::application.application', ({
       data: {
         messages: asJsonMessages([...prevMessages, message]),
       },
+      populate: APP_POPULATE,
     });
 
-    const application = toApiApplication(data as unknown as ApplicationDoc);
+    const stats = await statsForApplication(strapi, data as unknown as ApplicationDoc);
+    const application = toApiApplication(data as unknown as ApplicationDoc, stats);
     broadcast('MESSAGE_CREATED', { data: message, application });
     return { data: message, application };
   },
