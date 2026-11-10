@@ -20,12 +20,27 @@ export type AuthUser = {
 };
 
 /** Actions that can be authorized by {@link can}. */
-export type PolicyAction = 'favorites:read' | 'favorites:add' | 'favorites:remove';
+export type PolicyAction =
+  | 'favorites:read'
+  | 'favorites:add'
+  | 'favorites:remove'
+  | 'application:read'
+  | 'application:create'
+  | 'application:update'
+  | 'application:message'
+  | 'application:manage'
+  | 'application:rate';
 
 /** Attributes of the target resource required to evaluate a rule. */
 export type PolicyContext = {
-  /** Owner id of the target resource. */
+  /** Owner id of the target resource (e.g. the applicant). */
   userId?: number;
+  /** Owner id of an `application` document (the applicant). */
+  ownerId?: number;
+  /** Owner id of the vacancy the application belongs to. */
+  vacancyOwnerId?: number;
+  /** Company stored on the application. */
+  company?: string;
 };
 
 /**
@@ -59,7 +74,37 @@ export function can(
     case 'favorites:remove':
       // Favorites are strictly owner-scoped: only the owning user may act on them.
       return typeof context.userId === 'number' && user.id === context.userId;
+    case 'application:create':
+      return user.accountRole === 'user';
+    case 'application:read':
+    case 'application:update':
+    case 'application:message':
+      return canAccessApplication(user, context);
+    case 'application:manage':
+    case 'application:rate':
+      // Status/progress changes and employer ratings belong to the vacancy
+      // owner (or an admin); executors can never perform them.
+      return canManageApplication(user, context);
     default:
       return false;
   }
+}
+
+function sameCompany(left: string | undefined, right: string | undefined): boolean {
+  const a = left?.trim().toLowerCase();
+  const b = right?.trim().toLowerCase();
+  return Boolean(a && b && a === b);
+}
+
+function canAccessApplication(user: AuthUser, context: PolicyContext): boolean {
+  if (user.accountRole === 'admin') return true;
+  if (context.ownerId === user.id) return true;
+  if (user.accountRole !== 'employer') return false;
+  if (context.vacancyOwnerId === user.id) return true;
+  return sameCompany(user.companyName, context.company);
+}
+
+function canManageApplication(user: AuthUser, context: PolicyContext): boolean {
+  if (user.accountRole === 'admin') return true;
+  return user.accountRole === 'employer' && context.vacancyOwnerId === user.id;
 }
